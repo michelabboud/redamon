@@ -12,16 +12,17 @@
 
 1. [Overview](#overview)
 2. [Features](#features)
-3. [Installation](#installation)
-4. [Configuration Parameters](#configuration-parameters)
-5. [Architecture & Flow](#architecture--flow)
-6. [Function Reference](#function-reference)
-7. [Nuclei Arguments Explained](#nuclei-arguments-explained)
-8. [Template Categories](#template-categories)
-9. [Output Data Structure](#output-data-structure)
-10. [Nmap vs Nuclei Comparison](#nmap-vs-nuclei-comparison)
-11. [Usage Examples](#usage-examples)
-12. [Troubleshooting](#troubleshooting)
+3. [CVE Lookup (Technology-Based)](#cve-lookup-technology-based)
+4. [Installation](#installation)
+5. [Configuration Parameters](#configuration-parameters)
+6. [Architecture & Flow](#architecture--flow)
+7. [Function Reference](#function-reference)
+8. [Nuclei Arguments Explained](#nuclei-arguments-explained)
+9. [Template Categories](#template-categories)
+10. [Output Data Structure](#output-data-structure)
+11. [Nmap vs Nuclei Comparison](#nmap-vs-nuclei-comparison)
+12. [Usage Examples](#usage-examples)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -95,6 +96,179 @@ When `NUCLEI_DAST_MODE = True`, Katana crawler is integrated:
 | **Tor Integration** | Anonymous scanning via SOCKS proxy |
 | **Authenticated Crawling** | Custom headers support for login-protected pages |
 | **Incremental Saving** | Results saved progressively |
+| **CVE Lookup** | Technology-based CVE lookup (like Nmap's vulners) |
+
+---
+
+## CVE Lookup (Technology-Based)
+
+The Nuclei module includes an integrated CVE lookup feature that queries the NVD (National Vulnerability Database) for known vulnerabilities based on technologies detected by httpx. This replicates what Nmap's `vulners` script does.
+
+### How It Works
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  httpx detects  │────▶│  CVE Lookup      │────▶│  technology_cves│
+│  technologies:  │     │                  │     │  in JSON output │
+│  • Nginx:1.19.0 │     │  Query NVD API   │     │                 │
+│  • PHP:5.6.40   │     │  for each tech   │     │  23 CVEs found  │
+│  • jQuery:3.5.1 │     │  with version    │     │  2 CRITICAL     │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+```
+
+### Configuration
+
+```python
+# params.py - CVE Lookup Configuration
+# =============================================================================
+
+# Enable/disable technology-based CVE lookup
+CVE_LOOKUP_ENABLED = True
+
+# Data source: "nvd" (free, rate limited) or "vulners" (needs API key)
+CVE_LOOKUP_SOURCE = "nvd"
+
+# Maximum CVEs to return per technology
+CVE_LOOKUP_MAX_CVES = 20
+
+# Minimum CVSS score to include (0.0 = all, 4.0 = medium+, 7.0 = high+)
+CVE_LOOKUP_MIN_CVSS = 0.0
+
+# Vulners API key (optional - for better results with vulners source)
+# Get free API key at: https://vulners.com/
+VULNERS_API_KEY = ""
+```
+
+### Supported Technologies
+
+The CVE lookup supports 40+ common technologies with proper CPE (Common Platform Enumeration) mappings:
+
+| Category | Technologies |
+|----------|--------------|
+| **Web Servers** | nginx, Apache, IIS, Tomcat, Lighttpd, Caddy |
+| **Languages** | PHP, Python, Node.js, Ruby, Java |
+| **Databases** | MySQL, MariaDB, PostgreSQL, MongoDB, Redis, Elasticsearch |
+| **CMS/Frameworks** | WordPress, Drupal, Joomla, Django, Laravel, Spring |
+| **JavaScript** | jQuery, Angular, React, Vue, Bootstrap |
+| **Security** | OpenSSH, OpenSSL |
+| **Other** | Varnish, HAProxy, Grafana, Jenkins, GitLab |
+
+### Example Output
+
+When scanning `testphp.vulnweb.com`:
+
+```
+============================================================
+CVE LOOKUP - Technology-Based Vulnerability Discovery
+============================================================
+    Source: NVD
+    Min CVSS: 0.0
+
+[*] Technologies with versions: 3
+    [1/3] Nginx:1.19.0... ✓ 6 CVEs found
+    [2/3] PHP:5.6.40... ✓ 17 CVEs found
+    [3/3] nginx/1.19.0... ✓ 6 CVEs found
+
+[+] CVE LOOKUP SUMMARY:
+    Total unique CVEs: 23
+    🔴 CRITICAL: 2
+    🟠 HIGH: 10
+    🟡 MEDIUM: 10
+============================================================
+```
+
+### JSON Output Structure
+
+```json
+{
+  "technology_cves": {
+    "lookup_timestamp": "2025-12-31T14:30:00.000000",
+    "source": "nvd",
+    "technologies_checked": 3,
+    "technologies_with_cves": 3,
+    "by_technology": {
+      "Nginx:1.19.0": {
+        "technology": "Nginx:1.19.0",
+        "product": "nginx",
+        "version": "1.19.0",
+        "cve_count": 6,
+        "critical": 0,
+        "high": 5,
+        "cves": [
+          {
+            "id": "CVE-2021-23017",
+            "cvss": 7.7,
+            "severity": "HIGH",
+            "description": "A security issue in nginx resolver...",
+            "url": "https://nvd.nist.gov/vuln/detail/CVE-2021-23017",
+            "source": "nvd"
+          }
+        ]
+      },
+      "PHP:5.6.40": {
+        "technology": "PHP:5.6.40",
+        "product": "php",
+        "version": "5.6.40",
+        "cve_count": 17,
+        "critical": 2,
+        "high": 5,
+        "cves": [...]
+      }
+    },
+    "all_cves": [
+      {"id": "CVE-2017-8923", "cvss": 9.8, "severity": "CRITICAL", ...},
+      {"id": "CVE-2019-9641", "cvss": 9.8, "severity": "CRITICAL", ...},
+      ...
+    ],
+    "summary": {
+      "total_cves": 23,
+      "critical": 2,
+      "high": 10,
+      "medium": 10,
+      "low": 1
+    }
+  }
+}
+```
+
+### Nuclei Template CVEs vs Technology CVE Lookup
+
+| Source | What It Detects | Type |
+|--------|-----------------|------|
+| **Nuclei Templates** | Specific CVEs with exploits/checks | **Confirmed exploitable** |
+| **CVE Lookup** | All CVEs for detected version | **Potential vulnerabilities** |
+
+**Example:**
+- Nuclei template for CVE-2021-23017 → Checks if nginx resolver is vulnerable → Confirmed if matched
+- CVE Lookup for nginx 1.19.0 → Lists CVE-2021-23017 → May or may not be exploitable (depends on config)
+
+**Both are valuable:**
+- Nuclei = "This IS vulnerable"
+- CVE Lookup = "This COULD be vulnerable based on version"
+
+### Rate Limiting
+
+The NVD API has rate limits:
+- **Without API key:** 5 requests per 30 seconds
+- **With API key:** 50 requests per 30 seconds
+
+The script automatically adds delays between requests to avoid rate limiting.
+
+### Vulners Integration (Optional)
+
+For better results (like Nmap's vulners script), you can use the Vulners API:
+
+1. Get a free API key at [vulners.com](https://vulners.com/)
+2. Set in `params.py`:
+   ```python
+   CVE_LOOKUP_SOURCE = "vulners"
+   VULNERS_API_KEY = "your-api-key-here"
+   ```
+
+Vulners provides:
+- Faster responses
+- More CVE data
+- Same format as Nmap's vulners script
 
 ---
 

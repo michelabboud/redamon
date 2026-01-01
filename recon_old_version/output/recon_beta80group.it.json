@@ -1,0 +1,1070 @@
+{
+  "metadata": {
+    "scan_type": "subdomain_dns_discovery",
+    "scan_timestamp": "2025-12-27T12:29:39.629703",
+    "target_domain": "beta80group.it",
+    "anonymous_mode": true,
+    "bruteforce_mode": true
+  },
+  "domain": "beta80group.it",
+  "subdomains": [
+    "35mautodiscover.beta80group.it",
+    "35mautomation.beta80group.it",
+    "35mcontent.beta80group.it",
+    "35mdev.beta80group.it",
+    "35memail.beta80group.it",
+    "35menterpriseenrollment.beta80group.it",
+    "35mftp.beta80group.it",
+    "35mknowledge.beta80group.it",
+    "35mmobile.beta80group.it",
+    "35mopenvpn.beta80group.it",
+    "35msegnalazioni.beta80group.it",
+    "35mservicedesk.beta80group.it",
+    "35mstage.beta80group.it",
+    "35mwww.beta80group.it",
+    "agentmanager.hcl.awslab.beta80group.it",
+    "api.asrem.test.assistant.beta80group.it",
+    "api.lumsa.assistant.beta80group.it",
+    "api.lumsa.test.assistant.beta80group.it",
+    "asrem.test.assistant.beta80group.it",
+    "assistant.beta80group.it",
+    "beta80group.it",
+    "console.assistant.beta80group.it",
+    "console.hcl.awslab.beta80group.it",
+    "console.lumsa.assistant.beta80group.it",
+    "content.beta80group.it",
+    "email.beta80group.it",
+    "everyday.beta80group.it",
+    "gateway.hcl.awslab.beta80group.it",
+    "keycloak.hcl.awslab.beta80group.it",
+    "knowledge.beta80group.it",
+    "lumsa.test.assistant.beta80group.it",
+    "lumsa.vatutor.assistant.beta80group.it",
+    "micore.beta80group.it",
+    "myspacedev.awslab.beta80group.it",
+    "news.beta80group.it",
+    "servicedesk.beta80group.it",
+    "shibboleth.awslab.beta80group.it",
+    "smartdoc.awslab.beta80group.it",
+    "sunsuite.ottante.beta80group.it",
+    "whereareu.beta80group.it",
+    "www.asrem.test.assistant.beta80group.it",
+    "www.beta80group.it",
+    "www.lumsa.test.assistant.beta80group.it"
+  ],
+  "subdomain_count": 43,
+  "dns": {
+    "domain": {
+      "records": {
+        "A": [
+          "199.60.103.188",
+          "199.60.103.88"
+        ],
+        "AAAA": null,
+        "MX": [
+          "0 beta80group-it.mail.protection.outlook.com."
+        ],
+        "NS": [
+          "ns2.register.it.",
+          "ns1.register.it."
+        ],
+        "TXT": [
+          "\"p4zhbk1pfhvzm84rm7vjcm03c2gmx8vj\"",
+          "\"atlassian-domain-verification=0v/2vQ1L1rsQaW0iPS7NXgzSut4ofjSgXC7EIhgZ6OMARVD34hZaml4pFF78C6nw\"",
+          "\"m3029wbct9mzyxrsk5y971g49mq1qqgx\"",
+          "\"MS=ms24410696\"",
+          "\"v=spf1 mx ip4:52.16.190.81 ip4:52.17.45.98 ip4:80.94.114.166 ip4:80.94.114.170 ip4:5.249.132.140 ip4:85.222.158.224/28 ip4:85.222.150.224/28 include:5853087.spf02.hubspotemail.net include:spf.protection.outlook.com include:_spf.salesforce.com ~all\"",
+          "\"google-site-verification=ZBHRDn6xc_ygC8G_mUyz9HKwRZ_Cu9s1orqYuEyFQPU\"",
+          "\"google-site-verification=EdQM_SU2nRdC8QzWq0FChTKScXX7GUag3sE9Am6la5Y\"",
+          "\"6nyhk46szsl8qj8k6z81n7b8g2ncylr1\"",
+          "\"nd6q7bww4l22k4dn986xsvntthm8l9d1\""
+        ],
+        "SOA": [
+          "ns1.register.it. hostmaster.register.it. 2025122302 10800 3600 604800 86400"
+        ],
+        "CNAME": null
+      },
+      "ips": {
+        "ipv4": [
+          "199.60.103.188",
+          "199.60.103.88"
+        ],
+        "ipv6": []
+      },
+      "has_records": true
+    },
+    "subdomains": {
+      "35mautodiscover.beta80group.it": {
+        "records": {
+          "A": null,
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [],
+          "ipv6": []
+        },
+        "has_records": false
+      },
+      "35mautomation.beta80group.it": {
+        "records": {
+          "A": null,
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [],
+          "ipv6": []
+        },
+        "has_records": false
+      },
+      "35mcontent.beta80group.it": {
+        "records": {
+          "A": null,
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [],
+          "ipv6": []
+        },
+        "has_records": false
+      },
+      "35mdev.beta80group.it": {
+        "records": {
+          "A": null,
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [],
+          "ipv6": []
+        },
+        "has_records": false
+      },
+      "35memail.beta80group.it": {
+        "records": {
+          "A": null,
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [],
+          "ipv6": []
+        },
+        "has_records": false
+      },
+      "35menterpriseenrollment.beta80group.it": {
+        "records": {
+          "A": null,
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [],
+          "ipv6": []
+        },
+        "has_records": false
+      },
+      "35mftp.beta80group.it": {
+        "records": {
+          "A": null,
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [],
+          "ipv6": []
+        },
+        "has_records": false
+      },
+      "35mknowledge.beta80group.it": {
+        "records": {
+          "A": null,
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [],
+          "ipv6": []
+        },
+        "has_records": false
+      },
+      "35mmobile.beta80group.it": {
+        "records": {
+          "A": null,
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [],
+          "ipv6": []
+        },
+        "has_records": false
+      },
+      "35mopenvpn.beta80group.it": {
+        "records": {
+          "A": null,
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [],
+          "ipv6": []
+        },
+        "has_records": false
+      },
+      "35msegnalazioni.beta80group.it": {
+        "records": {
+          "A": null,
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [],
+          "ipv6": []
+        },
+        "has_records": false
+      },
+      "35mservicedesk.beta80group.it": {
+        "records": {
+          "A": null,
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [],
+          "ipv6": []
+        },
+        "has_records": false
+      },
+      "35mstage.beta80group.it": {
+        "records": {
+          "A": null,
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [],
+          "ipv6": []
+        },
+        "has_records": false
+      },
+      "35mwww.beta80group.it": {
+        "records": {
+          "A": null,
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [],
+          "ipv6": []
+        },
+        "has_records": false
+      },
+      "agentmanager.hcl.awslab.beta80group.it": {
+        "records": {
+          "A": [
+            "18.198.75.15",
+            "18.198.142.69",
+            "3.127.78.82"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "18.198.75.15",
+            "18.198.142.69",
+            "3.127.78.82"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "api.asrem.test.assistant.beta80group.it": {
+        "records": {
+          "A": [
+            "18.158.132.205",
+            "3.124.102.114"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "18.158.132.205",
+            "3.124.102.114"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "api.lumsa.assistant.beta80group.it": {
+        "records": {
+          "A": [
+            "18.193.245.158"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "18.193.245.158"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "api.lumsa.test.assistant.beta80group.it": {
+        "records": {
+          "A": [
+            "52.29.98.14",
+            "3.66.185.124"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "52.29.98.14",
+            "3.66.185.124"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "asrem.test.assistant.beta80group.it": {
+        "records": {
+          "A": [
+            "108.139.229.3",
+            "108.139.229.9",
+            "108.139.229.40",
+            "108.139.229.17"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "108.139.229.3",
+            "108.139.229.9",
+            "108.139.229.40",
+            "108.139.229.17"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "assistant.beta80group.it": {
+        "records": {
+          "A": [
+            "3.75.144.39",
+            "18.158.211.33"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": [
+            "ns-1256.awsdns-29.org.",
+            "ns-14.awsdns-01.com.",
+            "ns-1940.awsdns-50.co.uk.",
+            "ns-715.awsdns-25.net."
+          ],
+          "TXT": null,
+          "SOA": [
+            "ns-715.awsdns-25.net. awsdns-hostmaster.amazon.com. 1 7200 900 1209600 86400"
+          ],
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "3.75.144.39",
+            "18.158.211.33"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "console.assistant.beta80group.it": {
+        "records": {
+          "A": [
+            "18.65.82.78",
+            "18.65.82.33",
+            "18.65.82.98",
+            "18.65.82.128"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "18.65.82.78",
+            "18.65.82.33",
+            "18.65.82.98",
+            "18.65.82.128"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "console.hcl.awslab.beta80group.it": {
+        "records": {
+          "A": [
+            "3.127.78.82",
+            "18.198.75.15",
+            "18.198.142.69"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "3.127.78.82",
+            "18.198.75.15",
+            "18.198.142.69"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "console.lumsa.assistant.beta80group.it": {
+        "records": {
+          "A": [
+            "18.154.161.45",
+            "18.154.161.21",
+            "18.154.161.54",
+            "18.154.161.13"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "18.154.161.45",
+            "18.154.161.21",
+            "18.154.161.54",
+            "18.154.161.13"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "content.beta80group.it": {
+        "records": {
+          "A": [
+            "199.60.103.29",
+            "199.60.103.227"
+          ],
+          "AAAA": [
+            "2606:2c40::c73c:671d",
+            "2606:2c40::c73c:67e3"
+          ],
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": [
+            "5853087.group37.sites.hubspot.net."
+          ]
+        },
+        "ips": {
+          "ipv4": [
+            "199.60.103.29",
+            "199.60.103.227"
+          ],
+          "ipv6": [
+            "2606:2c40::c73c:671d",
+            "2606:2c40::c73c:67e3"
+          ]
+        },
+        "has_records": true
+      },
+      "email.beta80group.it": {
+        "records": {
+          "A": [
+            "199.60.103.29",
+            "199.60.103.227"
+          ],
+          "AAAA": [
+            "2606:2c40::c73c:67e3",
+            "2606:2c40::c73c:671d"
+          ],
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": [
+            "5853087.group37.sites.hubspot.net."
+          ]
+        },
+        "ips": {
+          "ipv4": [
+            "199.60.103.29",
+            "199.60.103.227"
+          ],
+          "ipv6": [
+            "2606:2c40::c73c:67e3",
+            "2606:2c40::c73c:671d"
+          ]
+        },
+        "has_records": true
+      },
+      "everyday.beta80group.it": {
+        "records": {
+          "A": [
+            "52.157.223.219"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "52.157.223.219"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "gateway.hcl.awslab.beta80group.it": {
+        "records": {
+          "A": [
+            "18.198.142.69",
+            "3.127.78.82",
+            "18.198.75.15"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "18.198.142.69",
+            "3.127.78.82",
+            "18.198.75.15"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "keycloak.hcl.awslab.beta80group.it": {
+        "records": {
+          "A": [
+            "18.198.224.25",
+            "63.181.131.80",
+            "35.156.255.140"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "18.198.224.25",
+            "63.181.131.80",
+            "35.156.255.140"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "knowledge.beta80group.it": {
+        "records": {
+          "A": [
+            "199.60.103.29",
+            "199.60.103.227"
+          ],
+          "AAAA": [
+            "2606:2c40::c73c:671d",
+            "2606:2c40::c73c:67e3"
+          ],
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": [
+            "5853087.group37.sites.hubspot.net."
+          ]
+        },
+        "ips": {
+          "ipv4": [
+            "199.60.103.29",
+            "199.60.103.227"
+          ],
+          "ipv6": [
+            "2606:2c40::c73c:671d",
+            "2606:2c40::c73c:67e3"
+          ]
+        },
+        "has_records": true
+      },
+      "lumsa.test.assistant.beta80group.it": {
+        "records": {
+          "A": [
+            "18.65.82.109",
+            "18.65.82.57",
+            "18.65.82.31",
+            "18.65.82.45"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "18.65.82.109",
+            "18.65.82.57",
+            "18.65.82.31",
+            "18.65.82.45"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "lumsa.vatutor.assistant.beta80group.it": {
+        "records": {
+          "A": [
+            "18.154.161.112",
+            "18.154.161.32",
+            "18.154.161.48",
+            "18.154.161.5"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": [
+            "ns-1358.awsdns-41.org.",
+            "ns-2006.awsdns-58.co.uk.",
+            "ns-264.awsdns-33.com.",
+            "ns-937.awsdns-53.net."
+          ],
+          "TXT": null,
+          "SOA": [
+            "ns-1358.awsdns-41.org. awsdns-hostmaster.amazon.com. 1 7200 900 1209600 86400"
+          ],
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "18.154.161.112",
+            "18.154.161.32",
+            "18.154.161.48",
+            "18.154.161.5"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "micore.beta80group.it": {
+        "records": {
+          "A": [
+            "80.94.114.185"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "80.94.114.185"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "myspacedev.awslab.beta80group.it": {
+        "records": {
+          "A": [
+            "52.21.6.127",
+            "54.90.0.196"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": [
+            "myspacelbdev-1360591057.us-east-1.elb.amazonaws.com."
+          ]
+        },
+        "ips": {
+          "ipv4": [
+            "52.21.6.127",
+            "54.90.0.196"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "news.beta80group.it": {
+        "records": {
+          "A": [
+            "199.60.103.29",
+            "199.60.103.227"
+          ],
+          "AAAA": [
+            "2606:2c40::c73c:671d",
+            "2606:2c40::c73c:67e3"
+          ],
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": [
+            "5853087.group37.sites.hubspot.net."
+          ]
+        },
+        "ips": {
+          "ipv4": [
+            "199.60.103.29",
+            "199.60.103.227"
+          ],
+          "ipv6": [
+            "2606:2c40::c73c:671d",
+            "2606:2c40::c73c:67e3"
+          ]
+        },
+        "has_records": true
+      },
+      "servicedesk.beta80group.it": {
+        "records": {
+          "A": [
+            "20.56.244.56"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "20.56.244.56"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "shibboleth.awslab.beta80group.it": {
+        "records": {
+          "A": null,
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [],
+          "ipv6": []
+        },
+        "has_records": false
+      },
+      "smartdoc.awslab.beta80group.it": {
+        "records": {
+          "A": null,
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [],
+          "ipv6": []
+        },
+        "has_records": false
+      },
+      "sunsuite.ottante.beta80group.it": {
+        "records": {
+          "A": [
+            "52.58.160.139",
+            "18.198.153.83"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": [
+            "ns-1003.awsdns-61.net.",
+            "ns-1160.awsdns-17.org.",
+            "ns-1667.awsdns-16.co.uk.",
+            "ns-59.awsdns-07.com."
+          ],
+          "TXT": null,
+          "SOA": [
+            "ns-59.awsdns-07.com. awsdns-hostmaster.amazon.com. 1 7200 900 1209600 86400"
+          ],
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "52.58.160.139",
+            "18.198.153.83"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "whereareu.beta80group.it": {
+        "records": {
+          "A": [
+            "80.94.114.183"
+          ],
+          "AAAA": null,
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": null
+        },
+        "ips": {
+          "ipv4": [
+            "80.94.114.183"
+          ],
+          "ipv6": []
+        },
+        "has_records": true
+      },
+      "www.asrem.test.assistant.beta80group.it": {
+        "records": {
+          "A": [
+            "108.139.229.9",
+            "108.139.229.3",
+            "108.139.229.17",
+            "108.139.229.40"
+          ],
+          "AAAA": [
+            "2600:9000:2307:7800:11:d6b6:79c0:93a1",
+            "2600:9000:2307:5a00:11:d6b6:79c0:93a1",
+            "2600:9000:2307:5200:11:d6b6:79c0:93a1",
+            "2600:9000:2307:ba00:11:d6b6:79c0:93a1",
+            "2600:9000:2307:5600:11:d6b6:79c0:93a1",
+            "2600:9000:2307:e000:11:d6b6:79c0:93a1",
+            "2600:9000:2307:5e00:11:d6b6:79c0:93a1",
+            "2600:9000:2307:b600:11:d6b6:79c0:93a1"
+          ],
+          "MX": null,
+          "NS": [
+            "ns-1515.awsdns-61.org.",
+            "ns-1726.awsdns-23.co.uk.",
+            "ns-22.awsdns-02.com.",
+            "ns-744.awsdns-29.net."
+          ],
+          "TXT": null,
+          "SOA": [
+            "ns-22.awsdns-02.com. awsdns-hostmaster.amazon.com. 1 7200 900 1209600 86400"
+          ],
+          "CNAME": [
+            "d31cbvedqxpgpz.cloudfront.net."
+          ]
+        },
+        "ips": {
+          "ipv4": [
+            "108.139.229.9",
+            "108.139.229.3",
+            "108.139.229.17",
+            "108.139.229.40"
+          ],
+          "ipv6": [
+            "2600:9000:2307:7800:11:d6b6:79c0:93a1",
+            "2600:9000:2307:5a00:11:d6b6:79c0:93a1",
+            "2600:9000:2307:5200:11:d6b6:79c0:93a1",
+            "2600:9000:2307:ba00:11:d6b6:79c0:93a1",
+            "2600:9000:2307:5600:11:d6b6:79c0:93a1",
+            "2600:9000:2307:e000:11:d6b6:79c0:93a1",
+            "2600:9000:2307:5e00:11:d6b6:79c0:93a1",
+            "2600:9000:2307:b600:11:d6b6:79c0:93a1"
+          ]
+        },
+        "has_records": true
+      },
+      "www.beta80group.it": {
+        "records": {
+          "A": [
+            "199.60.103.29",
+            "199.60.103.227"
+          ],
+          "AAAA": [
+            "2606:2c40::c73c:67e3",
+            "2606:2c40::c73c:671d"
+          ],
+          "MX": null,
+          "NS": null,
+          "TXT": null,
+          "SOA": null,
+          "CNAME": [
+            "5853087.group37.sites.hubspot.net."
+          ]
+        },
+        "ips": {
+          "ipv4": [
+            "199.60.103.29",
+            "199.60.103.227"
+          ],
+          "ipv6": [
+            "2606:2c40::c73c:67e3",
+            "2606:2c40::c73c:671d"
+          ]
+        },
+        "has_records": true
+      },
+      "www.lumsa.test.assistant.beta80group.it": {
+        "records": {
+          "A": [
+            "18.65.82.31",
+            "18.65.82.109",
+            "18.65.82.57",
+            "18.65.82.45"
+          ],
+          "AAAA": [
+            "2600:9000:2259:8a00:1f:f864:4bc0:93a1",
+            "2600:9000:2259:da00:1f:f864:4bc0:93a1",
+            "2600:9000:2259:1600:1f:f864:4bc0:93a1",
+            "2600:9000:2259:6e00:1f:f864:4bc0:93a1",
+            "2600:9000:2259:8800:1f:f864:4bc0:93a1",
+            "2600:9000:2259:d200:1f:f864:4bc0:93a1",
+            "2600:9000:2259:1800:1f:f864:4bc0:93a1",
+            "2600:9000:2259:7000:1f:f864:4bc0:93a1"
+          ],
+          "MX": null,
+          "NS": [
+            "ns-1183.awsdns-19.org.",
+            "ns-1930.awsdns-49.co.uk.",
+            "ns-278.awsdns-34.com.",
+            "ns-514.awsdns-00.net."
+          ],
+          "TXT": null,
+          "SOA": [
+            "ns-1930.awsdns-49.co.uk. awsdns-hostmaster.amazon.com. 1 7200 900 1209600 86400"
+          ],
+          "CNAME": [
+            "dcfa32h2bf6en.cloudfront.net."
+          ]
+        },
+        "ips": {
+          "ipv4": [
+            "18.65.82.31",
+            "18.65.82.109",
+            "18.65.82.57",
+            "18.65.82.45"
+          ],
+          "ipv6": [
+            "2600:9000:2259:8a00:1f:f864:4bc0:93a1",
+            "2600:9000:2259:da00:1f:f864:4bc0:93a1",
+            "2600:9000:2259:1600:1f:f864:4bc0:93a1",
+            "2600:9000:2259:6e00:1f:f864:4bc0:93a1",
+            "2600:9000:2259:8800:1f:f864:4bc0:93a1",
+            "2600:9000:2259:d200:1f:f864:4bc0:93a1",
+            "2600:9000:2259:1800:1f:f864:4bc0:93a1",
+            "2600:9000:2259:7000:1f:f864:4bc0:93a1"
+          ]
+        },
+        "has_records": true
+      }
+    }
+  }
+}

@@ -11,27 +11,32 @@ load_dotenv(Path(__file__).parent / ".env")
 
 # Target for RECON
 # Smart mode auto-detects target type:
-# - Root domain (e.g., "example.com"): full subdomain discovery + WHOIS + DNS + Nmap on all
-# - Subdomain (e.g., "www.example.com"): WHOIS on root, DNS + Nmap only on that subdomain
+# - Root domain (e.g., "example.com"): full subdomain discovery + WHOIS + DNS + scanning
+# - Subdomain (e.g., "www.example.com"): WHOIS on root, DNS + scanning only on that subdomain
 TARGET_DOMAIN = "testphp.vulnweb.com"
+USER_ID = "samgiam"
+PROJECT_ID = "first_test"
 
 # =============================================================================
 # SCAN MODULES - Control which modules to run
 # =============================================================================
-# Available modules:
-#   - "initial_recon" : WHOIS + Subdomain discovery + DNS (creates initial JSON)
-#   - "nmap"          : Port scanning + vulnerability detection (updates JSON)
-#   - "nuclei"        : Web application vulnerability scanning (updates JSON)
-#   - "github"        : GitHub secret hunting (creates separate JSON)
+# Available modules (tool-agnostic names):
+#   - "domain_discovery" : WHOIS + Subdomain discovery + DNS (creates initial JSON)
+#   - "port_scan"        : Fast port scanning (updates JSON)
+#   - "http_probe"       : HTTP probing and technology detection (updates JSON)
+#   - "vuln_scan"        : Web application vulnerability scanning (updates JSON)
+#   - "github"           : GitHub secret hunting (creates separate JSON)
+#
+# Pipeline: domain_discovery -> port_scan -> http_probe -> vuln_scan -> github
 #
 # Examples:
-#   ["initial_recon"]                          - Only domain recon
-#   ["initial_recon", "nmap"]                  - Recon + port scanning
-#   ["initial_recon", "nmap", "nuclei"]        - Full web scan
-#   ["initial_recon", "nmap", "nuclei", "github"] - Complete scan
-#   ["nmap", "nuclei"]                         - Update existing recon file (no initial_recon)
+#   ["domain_discovery"]                                          - Only domain recon
+#   ["domain_discovery", "port_scan", "http_probe"]               - Recon + port/HTTP probing
+#   ["domain_discovery", "port_scan", "http_probe", "vuln_scan"]  - Full web scan (default)
+#   ["domain_discovery", "port_scan", "http_probe", "vuln_scan", "github"] - Complete scan
+#   ["port_scan", "http_probe", "vuln_scan"]                      - Update existing recon file
 
-SCAN_MODULES = ["initial_recon", "nmap", "nuclei"]
+SCAN_MODULES = ["domain_discovery", "port_scan", "http_probe", "vuln_scan"]
 
 # Hide your real IP during subdomain enumeration (uses Tor + proxychains)
 # Requires: Tor running (sudo systemctl start tor) + proxychains4 installed
@@ -66,85 +71,229 @@ GITHUB_MAX_COMMITS = 100
 GITHUB_OUTPUT_JSON = True
 
 # =============================================================================
-# Nmap Port Scanner Configuration
+# Naabu Port Scanner Configuration (ProjectDiscovery)
 # =============================================================================
+# Fast, lightweight port scanner optimized for reconnaissance
+# Docker image: projectdiscovery/naabu:latest
+# Docs: https://github.com/projectdiscovery/naabu
 
-# Use Docker to run nmap instead of system binary (recommended)
-# Requires: Docker installed and running
-# Benefits: No need to install nmap, consistent environment, no sudo required for most scans
-NMAP_USE_DOCKER = True
+# Docker image for Naabu
+NAABU_DOCKER_IMAGE = "projectdiscovery/naabu:latest"
 
-# Docker image for Nmap
-NMAP_DOCKER_IMAGE = "instrumentisto/nmap:latest"
+# Ports to scan: "100", "1000", "full", or custom like "80,443,8080-8090"
+NAABU_TOP_PORTS = "1000"
 
-# Scan type: "fast", "thorough", "stealth", or "default"
-# - fast: Quick scan with aggressive timing (-T4)
-# - thorough: Comprehensive scan with OS/version detection (-T3 -A)
-# - stealth: Slow, stealthy SYN scan (-T2 -sS)
-# - default: Standard scan (-T3)
-NMAP_SCAN_TYPE = "thorough"
+# Custom ports (overrides TOP_PORTS if set)
+# Example: "22,80,443,8080,8443" or "1-65535"
+NAABU_CUSTOM_PORTS = ""
 
-# Number of top ports to scan (0 = use nmap default, ignored if CUSTOM_PORTS set)
-NMAP_TOP_PORTS = 1000
+# Rate limit (packets per second)
+# Higher = faster but may trigger rate limiting
+NAABU_RATE_LIMIT = 1000
 
-# Custom port specification (e.g., "22,80,443,8080" or "1-1000")
-# Leave empty to use TOP_PORTS setting
-NMAP_CUSTOM_PORTS = ""
+# Concurrent threads for scanning
+NAABU_THREADS = 25
 
-# Enable service/version detection (-sV)
-NMAP_SERVICE_DETECTION = True
+# Timeout per port in milliseconds
+NAABU_TIMEOUT = 10000
 
-# Enable OS fingerprinting (-O) - requires root/sudo
-NMAP_OS_DETECTION = True
+# Number of retries for failed probes
+NAABU_RETRIES = 3
 
-# Enable safe script scanning (banner, http-title, ssl-cert, etc.)
-NMAP_SCRIPT_SCAN = True
+# Scan type: "s" (SYN - requires root, faster) or "c" (CONNECT - no root needed)
+# SYN scan is more reliable and faster but requires root/sudo
+NAABU_SCAN_TYPE = "s"
+
+# Exclude CDN/WAF IPs (only scan ports 80,443 on CDN hosts)
+# Helps avoid false positives from CDN-protected sites
+NAABU_EXCLUDE_CDN = True
+
+# Display CDN information in output
+NAABU_DISPLAY_CDN = True
+
+# Service name detection
+# NOTE: Naabu's -sD flag exists but is NOT YET IMPLEMENTED
+# RedAmon uses internal port-to-service mapping instead (see get_service_name())
+# This setting is currently ignored until naabu implements service discovery
+NAABU_SERVICE_DETECTION = True
+
+# Skip host discovery (assume all hosts are up)
+# Recommended: True for web targets, False for network discovery
+NAABU_SKIP_HOST_DISCOVERY = True
+
+# Verify ports are actually open (extra TCP connection check)
+NAABU_VERIFY_PORTS = True
+
+# Passive mode - query Shodan InternetDB instead of active scanning
+# No packets sent to target (stealthier but may be outdated)
+NAABU_PASSIVE_MODE = False
 
 # =============================================================================
-# Nmap Vulnerability Scanning (NSE Scripts)
+# httpx HTTP Probing Configuration (ProjectDiscovery)
 # =============================================================================
+# Multi-purpose HTTP toolkit for probing and technology detection
+# Docker image: projectdiscovery/httpx:latest
+# Docs: https://github.com/projectdiscovery/httpx
 
-# Enable vulnerability scanning with NSE scripts
-# WARNING: This actively tests for vulnerabilities - use only with authorization!
-NMAP_VULN_SCAN = True
+# Docker image for httpx
+HTTPX_DOCKER_IMAGE = "projectdiscovery/httpx:latest"
 
-# Vulnerability scan intensity level:
-# - "light"    : Only safe vuln checks (ssl-*, http-headers, etc.)
-# - "standard" : Common CVE checks + safe exploits (recommended)
-# - "aggressive": All vuln scripts including intrusive ones (may crash services!)
-NMAP_VULN_INTENSITY = "standard"
+# Concurrent threads for HTTP probing
+HTTPX_THREADS = 50
 
-# Specific vulnerability categories to scan (empty = all based on intensity)
-# Options: "ssl", "http", "smb", "ftp", "ssh", "dns", "smtp", "auth", "dos" (careful!)
-NMAP_VULN_CATEGORIES = []  # Empty = auto based on intensity
+# Request timeout in seconds
+HTTPX_TIMEOUT = 10
 
-# Custom NSE scripts to run (in addition to auto-selected)
-# Example: ["http-sql-injection", "http-shellshock", "smb-vuln-ms17-010"]
-NMAP_CUSTOM_SCRIPTS = []
+# Number of retries for failed requests
+HTTPX_RETRIES = 2
 
-# Enable brute force scripts (default credentials, weak passwords)
-# WARNING: May trigger account lockouts!
-NMAP_BRUTE_SCAN = True
+# Rate limit (requests per second, 0 = no limit)
+# Lower values (10-50) look more human-like and avoid triggering WAFs
+HTTPX_RATE_LIMIT = 50
 
-# Maximum time per script execution (seconds)
-NMAP_SCRIPT_TIMEOUT = 300
+# Follow HTTP redirects
+HTTPX_FOLLOW_REDIRECTS = True
 
-# Host timeout in seconds (0 = no timeout)
-NMAP_TIMEOUT = 300
+# Maximum redirects to follow
+HTTPX_MAX_REDIRECTS = 10
 
-# Scan UDP ports (slower but finds more services)
-NMAP_SCAN_UDP = True
+# ----- Probing Options (what data to extract) -----
 
-# Scan hostnames/subdomains in addition to IPs
-# Useful for virtual hosts where services respond differently per hostname
-NMAP_SCAN_HOSTNAMES = True
+# HTTP response information
+HTTPX_PROBE_STATUS_CODE = True     # HTTP status code (200, 404, etc.)
+HTTPX_PROBE_CONTENT_LENGTH = True  # Response body size
+HTTPX_PROBE_CONTENT_TYPE = True    # Content-Type header
+HTTPX_PROBE_TITLE = True           # HTML page title
+HTTPX_PROBE_SERVER = True          # Server header (nginx, Apache, etc.)
+HTTPX_PROBE_RESPONSE_TIME = True   # Response time in milliseconds
+HTTPX_PROBE_WORD_COUNT = True      # Word count in response
+HTTPX_PROBE_LINE_COUNT = True      # Line count in response
+
+# Technology detection (Wappalyzer-based)
+HTTPX_PROBE_TECH_DETECT = True     # Detect technologies (frameworks, CMS, etc.)
+
+# Network information
+HTTPX_PROBE_IP = True              # Resolved IP address
+HTTPX_PROBE_CNAME = True           # CNAME DNS records
+
+# SSL/TLS information
+HTTPX_PROBE_TLS_INFO = True        # TLS certificate details
+HTTPX_PROBE_TLS_GRAB = True        # Grab TLS certificate data
+
+# Fingerprinting
+HTTPX_PROBE_FAVICON = True         # Favicon hash (for fingerprinting)
+HTTPX_PROBE_JARM = True            # JARM TLS fingerprint
+HTTPX_PROBE_HASH = "sha256"        # Response body hash (md5, sha256, etc.)
+
+# Response data inclusion
+HTTPX_INCLUDE_RESPONSE = True      # Include full response body (larger output)
+HTTPX_INCLUDE_RESPONSE_HEADERS = True  # Include response headers
+
+# ASN and CDN detection
+HTTPX_PROBE_ASN = True             # Autonomous System Number detection
+HTTPX_PROBE_CDN = True             # CDN detection
+
+# Web server paths to probe (in addition to root)
+# Example: ["/robots.txt", "/.well-known/security.txt"]
+HTTPX_PATHS = []
+
+# Custom headers to send with requests
+# These headers mimic a real Chrome browser to avoid WAF/bot detection
+HTTPX_CUSTOM_HEADERS = [
+    # Core browser identification
+    "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    # Content negotiation (what browser accepts)
+    "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language: en-US,en;q=0.9",
+    "Accept-Encoding: gzip, deflate",
+    # Connection behavior
+    "Connection: keep-alive",
+    "Upgrade-Insecure-Requests: 1",
+    # Chrome security headers (Sec-Fetch-*)
+    "Sec-Fetch-Dest: document",
+    "Sec-Fetch-Mode: navigate", 
+    "Sec-Fetch-Site: none",
+    "Sec-Fetch-User: ?1",
+    # Cache behavior
+    "Cache-Control: max-age=0",
+]
+
+# Filter responses by status code (empty = all)
+# Example: ["200", "301", "302"] - only keep these status codes
+HTTPX_MATCH_CODES = []
+
+# Exclude responses by status code
+# Example: ["404", "503"] - exclude these status codes
+HTTPX_FILTER_CODES = []
+
+
+# =============================================================================
+# Wappalyzer Technology Enhancement Configuration
+# =============================================================================
+# Enhances httpx technology detection with Wappalyzer's full pattern database
+# Uses existing HTML from httpx (no additional HTTP requests needed)
+# Detects: CMS plugins, analytics tools, security tools, frameworks, etc.
+
+# Enable/disable Wappalyzer technology enhancement
+WAPPALYZER_ENABLED = True
+
+# Minimum confidence level (0-100) to include a technology
+# Lower = more detections but potentially more false positives
+WAPPALYZER_MIN_CONFIDENCE = 50
+
+# Analyze only URLs with HTML body (recommended: True)
+# When False, attempts to analyze URLs without body (limited detection)
+WAPPALYZER_REQUIRE_HTML = True
+
+# -----------------------------------------------------------------------------
+# Wappalyzer Auto-Update Settings
+# -----------------------------------------------------------------------------
+# The python-Wappalyzer library is archived (Sept 2020) with outdated database.
+# Enable auto-update to download the latest technologies.json from official repo.
+
+# Enable automatic download of latest Wappalyzer technologies database
+WAPPALYZER_AUTO_UPDATE = True
+
+# URL base for downloading latest technologies database
+# Uses unpkg CDN which mirrors the npm package (more reliable than GitHub raw)
+# Technologies are split into alphabetical files (a.json, b.json, etc.)
+WAPPALYZER_NPM_VERSION = "6.10.66"  # Latest stable version with full tech database
+WAPPALYZER_BASE_URL = f"https://unpkg.com/wappalyzer@{WAPPALYZER_NPM_VERSION}"
+WAPPALYZER_CATEGORIES_URL = f"{WAPPALYZER_BASE_URL}/categories.json"
+
+# Local cache directory and file for downloaded database
+WAPPALYZER_CACHE_DIR = os.path.join(os.path.dirname(__file__), "recon", "data")
+WAPPALYZER_CACHE_FILE = os.path.join(WAPPALYZER_CACHE_DIR, "wappalyzer_technologies.json")
+
+# Cache TTL in hours (0 = always download fresh, 24 = update daily)
+WAPPALYZER_CACHE_TTL_HOURS = 24
+
+
+# =============================================================================
+# Banner Grabbing Configuration (Non-HTTP Service Detection)
+# =============================================================================
+# Detects service versions on non-HTTP ports (SSH, FTP, SMTP, MySQL, etc.)
+# Integrated into httpx_scan module - runs automatically after httpx probing
+
+# Enable/disable banner grabbing for non-HTTP ports
+BANNER_GRAB_ENABLED = True
+
+# Connection timeout per port (seconds)
+BANNER_GRAB_TIMEOUT = 5
+
+# Number of concurrent threads for banner grabbing
+BANNER_GRAB_THREADS = 20
+
+# Maximum banner length to store (characters)
+BANNER_GRAB_MAX_LENGTH = 500
+
 
 # =============================================================================
 # Nuclei Vulnerability Scanner Configuration
 # =============================================================================
 # Template-based vulnerability scanning using ProjectDiscovery's Nuclei
-# Complements nmap by providing deep web application vulnerability detection
-# Install: go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+# Runs after httpx to leverage discovered URLs and technologies
+# Docker image: projectdiscovery/nuclei:latest
 
 # Severity levels to scan (empty = all severities)
 # Options: "critical", "high", "medium", "low", "info"
@@ -227,9 +376,13 @@ KATANA_PARAMS_ONLY = True
 # "dn" = stays within same domain
 KATANA_SCOPE = "dn"
 
-# Custom headers for authenticated crawling (optional)
-# Example: ["Cookie: session=abc123", "Authorization: Bearer token"]
-KATANA_CUSTOM_HEADERS = []
+# Custom headers for authenticated crawling
+# Using browser-like headers helps avoid detection during DAST crawling
+KATANA_CUSTOM_HEADERS = [
+    "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language: en-US,en;q=0.9",
+]
 
 # =============================================================================
 
@@ -266,6 +419,29 @@ NUCLEI_INTERACTSH = True
 # Docker image to use (can pin to specific version)
 # Nuclei runs exclusively via Docker - requires Docker installed and running
 NUCLEI_DOCKER_IMAGE = "projectdiscovery/nuclei:latest"
+
+# =============================================================================
+# CVE Lookup Configuration (Technology-Based)
+# =============================================================================
+# Looks up CVEs for technologies detected by httpx (nginx, PHP, etc.)
+# This replicates what Nmap's vulners script does - version-based CVE lookup
+# Note: These are POTENTIAL CVEs based on version, not confirmed exploitable vulns
+
+# Enable/disable technology-based CVE lookup
+CVE_LOOKUP_ENABLED = True
+
+# Data source: "nvd" (free, rate limited) or "vulners" (better, needs API key)
+CVE_LOOKUP_SOURCE = "nvd"
+
+# Maximum CVEs to return per technology
+CVE_LOOKUP_MAX_CVES = 20
+
+# Minimum CVSS score to include (0.0 = all, 4.0 = medium+, 7.0 = high+)
+CVE_LOOKUP_MIN_CVSS = 0.0
+
+# Vulners API key (optional - for better results with vulners source)
+# Get free API key at: https://vulners.com/
+VULNERS_API_KEY = ""
 
 
 

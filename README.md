@@ -32,11 +32,11 @@ RedAmon executes scans in a modular pipeline. Each module adds data to a single 
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌───────────┐  │
-│  │ initial_recon│───►│     nmap     │───►│    nuclei    │───►│  github   │  │
-│  │              │    │              │    │              │    │           │  │
-│  │  • WHOIS     │    │  • Ports     │    │  • Web vulns │    │  • Secrets│  │
-│  │  • DNS       │    │  • Services  │    │  • CVEs      │    │  • Leaks  │  │
-│  │  • Subdomains│    │  • OS detect │    │  • XSS/SQLi  │    │  • Keys   │  │
+│  │  domain_     │───►│  port_scan   │───►│  http_probe  │───►│ vuln_scan │  │
+│  │  discovery   │    │              │    │              │    │           │  │
+│  │  • WHOIS     │    │  • Port scan │    │  • HTTP probe│    │  • Web    │  │
+│  │  • DNS       │    │  • CDN detect│    │  • Tech detect│   │    vulns  │  │
+│  │  • Subdomains│    │  • Services  │    │  • TLS/SSL   │    │  • CVEs   │  │
 │  └──────────────┘    └──────────────┘    └──────────────┘    └───────────┘  │
 │         │                   │                   │                   │       │
 │         └───────────────────┴───────────────────┴───────────────────┘       │
@@ -44,6 +44,11 @@ RedAmon executes scans in a modular pipeline. Each module adds data to a single 
 │                                     ▼                                       │
 │                    📄 recon/output/recon_<domain>.json                      │
 │                                                                             │
+│  Optional: ┌───────────┐                                                    │
+│            │  github   │ ──► github_secrets_<org>.json                      │
+│            │  • Secrets│                                                    │
+│            │  • Leaks  │                                                    │
+│            └───────────┘                                                    │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -57,21 +62,21 @@ Edit `params.py`:
 
 ```python
 # Run all modules (recommended for full assessment)
-SCAN_MODULES = ["initial_recon", "nmap", "nuclei", "github"]
+SCAN_MODULES = ["domain_discovery", "port_scan", "http_probe", "vuln_scan", "github"]
 
 # Quick recon only (no vulnerability scanning)
-SCAN_MODULES = ["initial_recon"]
+SCAN_MODULES = ["domain_discovery"]
 
-# Port scan + web vulnerabilities (skip domain discovery)
-SCAN_MODULES = ["nmap", "nuclei"]
+# Port scan + HTTP probing (skip vulnerability scanning)
+SCAN_MODULES = ["domain_discovery", "port_scan", "http_probe"]
 
-# Update existing scan with just Nuclei
-SCAN_MODULES = ["nuclei"]
+# Update existing scan with just vulnerability scanning
+SCAN_MODULES = ["vuln_scan"]
 ```
 
 ---
 
-### Module 1: `initial_recon` - Domain Intelligence
+### Module 1: `domain_discovery` - Domain Intelligence
 
 **Purpose:** Gather information about the target domain and discover attack surface.
 
@@ -91,34 +96,71 @@ USE_BRUTEFORCE_FOR_SUBDOMAINS = False   # Brute force subdomain discovery
 
 ---
 
-### Module 2: `nmap` - Network & Infrastructure Scanning
+### Module 2: `port_scan` - Fast Port Scanning
 
-**Purpose:** Discover open ports, running services, OS fingerprinting, and network-level vulnerabilities.
+**Purpose:** Discover open ports on discovered hosts using ProjectDiscovery's Naabu.
 
 | What It Finds | Examples |
 |---------------|----------|
 | **Open ports** | 22/SSH, 80/HTTP, 443/HTTPS, 3306/MySQL |
-| **Service versions** | Apache 2.4.41, OpenSSH 8.2 |
-| **OS detection** | Ubuntu 20.04, Windows Server 2019 |
-| **Network vulns** | EternalBlue (MS17-010), Heartbleed, SSL issues |
-| **CVEs** | Matches service versions against CVE database |
+| **CDN detection** | Cloudflare, Akamai, Fastly |
+| **Service hints** | Common service identification |
 
-**Execution:** Runs via Docker (`instrumentisto/nmap:latest`) - no local installation needed.
+**Execution:** Runs via Docker (`projectdiscovery/naabu:latest`) - no local installation needed.
 
 **Key Parameters:**
 ```python
-NMAP_USE_DOCKER = True                  # Use Docker (recommended)
-NMAP_SCAN_TYPE = "thorough"             # fast | thorough | stealth
-NMAP_TOP_PORTS = 1000                   # Number of ports to scan
-NMAP_VULN_SCAN = True                   # Enable vulnerability scripts
-NMAP_VULN_INTENSITY = "standard"        # light | standard | aggressive
+NAABU_TOP_PORTS = "1000"               # Number of top ports to scan
+NAABU_RATE_LIMIT = 1000                # Packets per second
+NAABU_SCAN_TYPE = "s"                  # SYN scan (requires root)
+NAABU_SERVICE_DETECTION = True         # Identify services
+NAABU_EXCLUDE_CDN = True               # Skip CDN-protected ports
 ```
 
-📖 **Detailed documentation:** [readmes/README.NMAP.md](readmes/README.NMAP.md)
+📖 **Detailed documentation:** [readmes/README.PORT_SCAN.md](readmes/README.PORT_SCAN.md)
 
 ---
 
-### Module 3: `nuclei` - Web Application Vulnerability Scanning
+### Module 3: `http_probe` - HTTP Probing & Technology Detection + Wappalyzer Enhancement
+
+**Purpose:** Probe HTTP/HTTPS services and detect technologies, server info, and TLS details. Enhanced with Wappalyzer for comprehensive technology detection.
+
+| What It Finds | Examples |
+|---------------|----------|
+| **Live URLs** | Which endpoints are responding |
+| **Technologies** | WordPress, nginx, PHP, React |
+| **CMS Plugins** | Yoast SEO, WooCommerce, Contact Form 7 (via Wappalyzer) |
+| **Analytics Tools** | Google Analytics, Facebook Pixel, Hotjar (via Wappalyzer) |
+| **Security Tools** | Cloudflare, Sucuri, reCAPTCHA (via Wappalyzer) |
+| **Server info** | Apache 2.4.41, nginx 1.18 |
+| **TLS certificates** | Issuer, expiry, SANs |
+| **CDN/ASN** | Cloudflare, AWS, network info |
+| **Response data** | Status codes, headers, body hash |
+
+**Execution:** Runs via Docker (`projectdiscovery/httpx:latest`). Wappalyzer enhancement uses existing HTML (no extra HTTP requests).
+
+**Key Parameters:**
+```python
+HTTPX_THREADS = 50                     # Concurrent threads
+HTTPX_PROBE_TECH_DETECT = True         # Technology detection (httpx built-in)
+HTTPX_PROBE_TLS_INFO = True            # TLS certificate info
+HTTPX_INCLUDE_RESPONSE = True          # Include response body (required for Wappalyzer)
+WAPPALYZER_ENABLED = True              # Enable Wappalyzer enhancement
+WAPPALYZER_MIN_CONFIDENCE = 50         # Minimum confidence level
+```
+
+**Wappalyzer Enhancement:**
+- Uses existing HTML from httpx (no additional HTTP requests)
+- Detects 1000+ technologies vs httpx's ~50-100 patterns
+- Finds CMS plugins, analytics tools, security tools, frameworks
+- Provides version detection and category classification
+- Automatically merges new technologies into httpx results
+
+📖 **Detailed documentation:** [readmes/README.HTTP_PROBE.md](readmes/README.HTTP_PROBE.md)
+
+---
+
+### Module 4: `vuln_scan` - Web Application Vulnerability Scanning
 
 **Purpose:** Deep web application security testing with thousands of vulnerability templates.
 
@@ -129,7 +171,6 @@ NMAP_VULN_INTENSITY = "standard"        # light | standard | aggressive
 | **Misconfigurations** | Exposed admin panels, debug endpoints |
 | **Information leaks** | .git exposure, backup files, API keys |
 | **Default credentials** | Admin:admin, test accounts |
-| **Technology detection** | WordPress, Nginx, PHP version |
 
 **Execution:** Runs via Docker (`projectdiscovery/nuclei:latest`) with Katana crawler for DAST.
 
@@ -141,11 +182,11 @@ NUCLEI_RATE_LIMIT = 100                  # Requests per second
 NUCLEI_AUTO_UPDATE_TEMPLATES = True      # Update 9000+ templates
 ```
 
-📖 **Detailed documentation:** [readmes/README.NUCLEI.md](readmes/README.NUCLEI.md)
+📖 **Detailed documentation:** [readmes/README.VULN_SCAN.md](readmes/README.VULN_SCAN.md)
 
 ---
 
-### Module 4: `github` - Secret Hunting
+### Module 5: `github` - Secret Hunting
 
 **Purpose:** Find leaked credentials, API keys, and secrets in GitHub repositories.
 
@@ -166,168 +207,261 @@ GITHUB_MAX_COMMITS = 100                 # Commits per repo
 
 ---
 
-## 🆚 Deep Comparison: Nmap vs Nuclei vs GVM
+## 🆚 Complete Tool Comparison
 
-Understanding the differences between these scanners is crucial for effective vulnerability assessment.
+Understanding what each tool does is crucial for effective reconnaissance. RedAmon uses 6 different tools in its pipeline.
 
-### Overview Comparison
+### 📊 Overview: All Tools at a Glance
 
-| Aspect | Nmap | Nuclei | GVM/OpenVAS |
-|--------|------|--------|-------------|
-| **Primary Focus** | Network infrastructure | Web applications | Full vulnerability management |
-| **OSI Layer** | Layer 3-4 (Network/Transport) | Layer 7 (Application) | Layer 3-7 (Full stack) |
-| **Speed** | ⚡ Fast (minutes) | 🔄 Medium (minutes-hours) | 🐢 Slow (hours-days) |
-| **CVE Database** | ~600 NSE vuln scripts | ~9,000+ templates | ~80,000+ NVTs |
-| **Setup Complexity** | 🟢 Easy (single binary) | 🟢 Easy (single binary) | 🔴 Complex (Docker stack) |
-| **Resource Usage** | Low (~100MB RAM) | Medium (~500MB RAM) | High (~8GB+ RAM) |
+| Tool | Primary Purpose | Layer | Speed | Output |
+|------|-----------------|-------|-------|--------|
+| **WHOIS** | Domain ownership & registration | DNS/Registry | ⚡ Instant | Registrar, dates, contacts |
+| **DNS** | Domain resolution & records | Layer 3 (Network) | ⚡ Instant | IPs, MX, TXT, CNAME records |
+| **Naabu** | Port discovery | Layer 4 (Transport) | ⚡ Very Fast | Open ports, protocols |
+| **httpx** | HTTP probing & tech detection | Layer 7 (Application) | ⚡ Fast | Live URLs, technologies, TLS |
+| **Nuclei** | Vulnerability scanning | Layer 7 (Application) | 🔄 Medium | CVEs, misconfigs, vulns |
+| **GVM/OpenVAS** | Deep vulnerability assessment | All Layers | 🐢 Slow | Full security audit |
 
-### Vulnerability Detection Capabilities
+---
 
-| Vulnerability Type | Nmap | Nuclei | GVM |
-|--------------------|------|--------|-----|
-| **Open Ports** | ✅ Primary function | ❌ Relies on input | ✅ Yes |
-| **Service Versions** | ✅ Excellent (-sV) | ⚠️ Limited | ✅ Yes |
-| **OS Fingerprinting** | ✅ Excellent (-O) | ❌ No | ✅ Yes |
-| **SSL/TLS Issues** | ✅ Good (NSE scripts) | ✅ Good | ✅ Excellent |
-| **SQL Injection** | ⚠️ Basic detection | ✅ Excellent (DAST) | ✅ Good |
-| **XSS (Cross-Site Scripting)** | ⚠️ Basic detection | ✅ Excellent (DAST) | ✅ Good |
-| **Command Injection** | ⚠️ Limited | ✅ Excellent (DAST) | ✅ Good |
-| **CSRF** | ❌ No | ✅ Yes | ⚠️ Limited |
-| **File Inclusion (LFI/RFI)** | ⚠️ Limited | ✅ Excellent | ✅ Good |
-| **Directory Traversal** | ⚠️ Limited | ✅ Excellent | ✅ Good |
-| **Information Disclosure** | ✅ Good | ✅ Excellent | ✅ Excellent |
-| **Default Credentials** | ✅ Good (brute scripts) | ✅ Good | ✅ Excellent |
-| **SMB Vulnerabilities** | ✅ Excellent (EternalBlue, etc.) | ⚠️ Limited | ✅ Excellent |
-| **SSH Vulnerabilities** | ✅ Good | ⚠️ Limited | ✅ Excellent |
-| **Database Vulns** | ✅ Good (MySQL, MSSQL) | ⚠️ Limited | ✅ Excellent |
-| **Web Server Misconfig** | ✅ Good | ✅ Excellent | ✅ Excellent |
-| **CMS Vulnerabilities** | ⚠️ Limited | ✅ Excellent (WP, Joomla, Drupal) | ✅ Good |
-| **API Security** | ❌ No | ✅ Good | ⚠️ Limited |
-| **Cloud Misconfigurations** | ❌ No | ✅ Good (AWS, Azure, GCP) | ⚠️ Limited |
+### 🔍 WHOIS - Domain Intelligence
 
-**Legend:** ✅ Excellent/Primary | ⚠️ Limited/Basic | ❌ Not supported
+| What It Does | What It Finds |
+|--------------|---------------|
+| Queries domain registries | **Registrar**: Who registered the domain |
+| Retrieves registration data | **Dates**: Created, expires, last updated |
+| Identifies ownership | **Name Servers**: DNS infrastructure |
+| Discovers related domains | **Contacts**: Admin, tech contacts (often redacted) |
 
-### Detection Methods
-
-| Method | Nmap | Nuclei | GVM |
-|--------|------|--------|-----|
-| **Banner Grabbing** | ✅ Yes | ✅ Yes | ✅ Yes |
-| **Version Fingerprinting** | ✅ Excellent | ⚠️ Basic | ✅ Excellent |
-| **Active Fuzzing (DAST)** | ⚠️ Limited | ✅ Excellent | ✅ Good |
-| **Passive Detection** | ✅ Yes | ✅ Yes | ✅ Yes |
-| **Authenticated Scanning** | ⚠️ Limited (SSH, SMB) | ⚠️ HTTP headers only | ✅ Excellent |
-| **Template/Signature Based** | ✅ NSE scripts | ✅ YAML templates | ✅ NVTs |
-| **Exploit Verification** | ⚠️ Some scripts | ✅ Yes (safe) | ✅ Yes |
-| **Out-of-Band (OOB)** | ❌ No | ✅ Interactsh | ⚠️ Limited |
-
-### CVE Coverage by Category
-
-| CVE Category | Nmap | Nuclei | GVM |
-|--------------|------|--------|-----|
-| **Network Services** | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ |
-| **Web Applications** | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
-| **Operating Systems** | ⭐⭐⭐⭐ | ⭐ | ⭐⭐⭐⭐⭐ |
-| **CMS/Frameworks** | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ |
-| **IoT/Embedded** | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ |
-| **Cloud Services** | ⭐ | ⭐⭐⭐⭐ | ⭐⭐ |
-| **Databases** | ⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ |
-
-### Scan Performance
-
-| Metric | Nmap | Nuclei | GVM |
-|--------|------|--------|-----|
-| **100 ports scan** | ~30 seconds | N/A | ~5 minutes |
-| **1000 ports + services** | ~5 minutes | N/A | ~30 minutes |
-| **Full web app scan** | ~10 minutes (scripts) | ~15-30 minutes | ~2-4 hours |
-| **Full vuln assessment** | ~30 minutes | ~1-2 hours | ~4-8 hours |
-| **Parallel targets** | ✅ Excellent | ✅ Good | ⚠️ Limited |
-| **Rate limiting** | ✅ Configurable (-T0 to -T5) | ✅ Fine-grained | ⚠️ Basic |
-
-### Output & Reporting
-
-| Feature | Nmap | Nuclei | GVM |
-|---------|------|--------|-----|
-| **JSON Output** | ✅ Yes (-oJ) | ✅ Yes (-json) | ✅ Yes (API) |
-| **XML Output** | ✅ Yes (-oX) | ❌ No | ✅ Yes |
-| **HTML Reports** | ⚠️ Via XSLT | ⚠️ Via tools | ✅ Built-in |
-| **PDF Reports** | ❌ No | ❌ No | ✅ Built-in |
-| **CVSS Scores** | ✅ Via vulners | ✅ Yes | ✅ Yes |
-| **Remediation Guidance** | ⚠️ Limited | ✅ Good | ✅ Excellent |
-| **Compliance Reports** | ❌ No | ❌ No | ✅ PCI-DSS, HIPAA |
-| **Trend Analysis** | ❌ No | ❌ No | ✅ Yes |
-
-### Practical Use Cases
-
+**Example Output:**
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    WHICH SCANNER FOR WHICH TASK?                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  🔍 "What ports are open?"                    ──► NMAP                     │
-│  🔍 "What services are running?"              ──► NMAP                     │
-│  🔍 "What OS is this server?"                 ──► NMAP                     │
-│                                                                             │
-│  🌐 "Is this website vulnerable to XSS?"      ──► NUCLEI (DAST mode)       │
-│  🌐 "Does this app have SQL injection?"       ──► NUCLEI (DAST mode)       │
-│  🌐 "Is WordPress outdated?"                  ──► NUCLEI                   │
-│  🌐 "Are there exposed admin panels?"         ──► NUCLEI                   │
-│                                                                             │
-│  🏢 "Full CVE audit for compliance"           ──► GVM                      │
-│  🏢 "Enterprise vulnerability management"     ──► GVM                      │
-│  🏢 "Authenticated internal scan"             ──► GVM                      │
-│  🏢 "PCI-DSS compliance report"               ──► GVM                      │
-│                                                                             │
-│  ⚡ "Quick external assessment"               ──► NMAP + NUCLEI            │
-│  ⚡ "Bug bounty hunting"                      ──► NUCLEI (primary)         │
-│  ⚡ "Pentest infrastructure"                  ──► NMAP (primary) + GVM     │
-│  ⚡ "Pentest web application"                 ──► NUCLEI (primary)         │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+Domain: vulnweb.com
+Registrar: Gandi SAS
+Created: 2010-06-14
+Expires: 2027-06-14
+Organization: Invicti Security Limited
 ```
 
-### Recommended Scan Strategy
+**Speed:** ⚡ <1 second | **Requires:** Nothing (Python library)
 
-For **comprehensive assessment**, use all three in this order:
+---
 
+### 🌐 DNS - Domain Resolution
+
+| What It Does | What It Finds |
+|--------------|---------------|
+| Resolves hostnames to IPs | **A/AAAA Records**: IPv4/IPv6 addresses |
+| Discovers subdomains | **MX Records**: Mail servers |
+| Maps infrastructure | **TXT Records**: SPF, DKIM, verification |
+| Finds related services | **CNAME Records**: Aliases, CDN endpoints |
+
+**Example Output:**
 ```
-1. NMAP (Infrastructure Discovery)
-   └─► Discover ports, services, OS
-   └─► Find network-level vulns (SMB, SSL, SSH)
-   └─► Output: IP list, service map, initial CVEs
-   
-2. NUCLEI (Web Application Testing)  
-   └─► Deep web vulnerability scanning
-   └─► DAST fuzzing for XSS, SQLi, etc.
-   └─► Technology-specific CVE checks
-   └─► Output: Web vulns, misconfigs, exposures
-
-3. GVM (Enterprise Validation) - Optional
-   └─► Comprehensive CVE validation
-   └─► Authenticated scanning
-   └─► Compliance reporting
-   └─► Output: Full audit report
+testphp.vulnweb.com → 44.228.249.3 (A record)
+                    → "google-site-verification:xxx" (TXT record)
 ```
 
-### Quick Decision Matrix
+**Speed:** ⚡ <1 second per domain | **Requires:** Nothing (Python library)
 
-| Your Situation | Recommended Scanner |
-|----------------|---------------------|
-| Bug bounty on web app | **Nuclei** (DAST mode) |
-| Quick external recon | **Nmap** → **Nuclei** |
-| Internal network audit | **Nmap** → **GVM** |
-| Web app pentest | **Nuclei** (primary) |
-| Infrastructure pentest | **Nmap** (primary) |
-| Compliance audit (PCI/HIPAA) | **GVM** (required) |
-| CTF/Learning | **Nmap** + **Nuclei** |
-| Red team engagement | All three |
+---
 
-### Limitations Summary
+### 🚀 Naabu - Port Scanner
 
-| Scanner | Main Limitations |
-|---------|------------------|
-| **Nmap** | Limited web app testing, no DAST fuzzing, basic XSS/SQLi detection |
-| **Nuclei** | No port scanning, limited auth scanning, requires URLs as input |
-| **GVM** | Very slow, high resource usage, complex setup, overkill for quick scans |
+| What It Does | What It Finds |
+|--------------|---------------|
+| Scans TCP/UDP ports | **Open Ports**: Which ports accept connections |
+| Identifies services | **Protocols**: TCP/UDP |
+| Detects CDN/Cloud | **CDN Detection**: Cloudflare, AWS, etc. |
+| Fast SYN scanning | **Service Hints**: Port-based service guessing |
+
+**Detection Capabilities:**
+
+| Capability | Status | Details |
+|------------|--------|---------|
+| Open Ports | ✅ Primary | SYN/CONNECT scan, top-N or custom ports |
+| CDN Detection | ✅ Yes | Identifies CDN-protected IPs |
+| Service Names | ⚠️ Basic | Port-based mapping only (80→http) |
+| Service Versions | ❌ No | Cannot detect actual versions |
+| Banner Grabbing | ❌ No | Does not connect to services |
+
+**Speed:** ⚡ ~5-10 seconds for 1000 ports | **Requires:** Docker, root (for SYN scan)
+
+---
+
+### 🔬 httpx - HTTP Prober & Tech Detector + Wappalyzer Enhancement
+
+| What It Does | What It Finds |
+|--------------|---------------|
+| Probes HTTP/HTTPS endpoints | **Live URLs**: Which URLs respond |
+| Detects web technologies | **Technologies**: PHP, WordPress, nginx, React |
+| **Wappalyzer Enhancement** | **CMS Plugins**: Yoast SEO, WooCommerce, Contact Form 7 |
+| **Wappalyzer Enhancement** | **Analytics**: Google Analytics, Facebook Pixel, Hotjar |
+| **Wappalyzer Enhancement** | **Security Tools**: Cloudflare, Sucuri, reCAPTCHA |
+| Extracts SSL/TLS info | **Certificates**: Issuer, expiry, SANs |
+| Fingerprints servers | **Server Headers**: nginx, Apache, IIS |
+| Captures response data | **Hashes**: Favicon, body, JARM fingerprint |
+
+**Detection Capabilities:**
+
+| Capability | Status | Details |
+|------------|--------|---------|
+| Live URL Discovery | ✅ Primary | HTTP status codes, response validation |
+| Technology Detection (httpx) | ✅ Excellent | Wappalyzer-like fingerprinting (~50-100 patterns) |
+| **Technology Detection (Wappalyzer)** | ✅ **Enhanced** | **1000+ technology patterns, CMS plugins, analytics** |
+| **CMS Plugin Detection** | ✅ **NEW** | **WordPress/Drupal/Joomla plugins via Wappalyzer** |
+| **Version Detection** | ✅ **Enhanced** | **Software versions with confidence scores** |
+| TLS/SSL Analysis | ✅ Excellent | Cert chain, cipher suites, versions |
+| CDN Detection | ✅ Yes | Via headers and IP analysis |
+| Server Fingerprint | ✅ Yes | Server header, JARM, favicon hash |
+| Response Capture | ✅ Yes | Headers, body, word/line count |
+| Vulnerability Scanning | ❌ No | Detection only, no exploitation |
+
+**Speed:** ⚡ ~10-30 seconds per URL (with all options) + ~1-2 seconds per URL for Wappalyzer | **Requires:** Docker, `python-Wappalyzer` library
+
+---
+
+### 🎯 Nuclei - Vulnerability Scanner + CVE Lookup
+
+| What It Does | What It Finds |
+|--------------|---------------|
+| Template-based scanning | **CVEs**: Known vulnerabilities |
+| Active vulnerability testing | **Misconfigurations**: Exposed panels, default creds |
+| DAST fuzzing | **Injection Flaws**: XSS, SQLi, SSTI |
+| Exposure detection | **Information Disclosure**: Backup files, debug info |
+| Technology-specific checks | **CMS Vulns**: WordPress, Joomla, Drupal |
+| **CVE Lookup** | **Version-based CVEs**: Like Nmap's vulners script |
+
+**Detection Capabilities:**
+
+| Capability | Status | Details |
+|------------|--------|---------|
+| CVE Detection | ✅ Excellent | 8000+ templates, constantly updated |
+| **CVE Lookup** | ✅ **NEW** | Queries NVD for technology CVEs (nginx, PHP, etc.) |
+| Misconfiguration | ✅ Excellent | Default passwords, exposed endpoints |
+| XSS Testing | ✅ DAST Mode | Active payload injection |
+| SQL Injection | ✅ DAST Mode | Active fuzzing with payloads |
+| SSRF/SSTI | ✅ DAST Mode | Server-side vulnerability testing |
+| Information Disclosure | ✅ Yes | Sensitive files, backup exposure |
+| Authentication Issues | ✅ Yes | Default creds, auth bypass |
+| Port Scanning | ❌ No | Uses pre-discovered URLs |
+
+**CVE Lookup Example (like Nmap's vulners):**
+```
+Technologies detected: Nginx:1.19.0, PHP:5.6.40
+CVEs found: 23 (2 CRITICAL, 10 HIGH)
+  - CVE-2017-8923 (CVSS 9.8) - PHP buffer overflow
+  - CVE-2021-23017 (CVSS 7.7) - nginx resolver
+  - CVE-2022-41741 (CVSS 7.0) - nginx mp4 module
+```
+
+**Speed:** 🔄 ~1-30 minutes depending on templates | **Requires:** Docker
+
+---
+
+### 🛡️ GVM/OpenVAS - Deep Vulnerability Assessment
+
+| What It Does | What It Finds |
+|--------------|---------------|
+| Full network vulnerability scan | **Network Vulns**: Service-level vulnerabilities |
+| CVE-based detection | **Missing Patches**: Outdated software |
+| Compliance checking | **Security Issues**: Weak configs, protocols |
+| Comprehensive audit | **All Services**: Not just web (SSH, FTP, DB) |
+
+**Detection Capabilities:**
+
+| Capability | Status | Details |
+|------------|--------|---------|
+| CVE Detection | ✅ Excellent | 100,000+ NVTs (vulnerability tests) |
+| Service Vulnerabilities | ✅ Primary | SSH, FTP, SMTP, databases, etc. |
+| SSL/TLS Issues | ✅ Excellent | Weak ciphers, expired certs |
+| Network Misconfig | ✅ Yes | Open services, weak protocols |
+| Web Vulnerabilities | ✅ Good | Basic web testing included |
+| Compliance Checks | ✅ Yes | PCI-DSS, CIS benchmarks |
+| False Positive Rate | ⚠️ Higher | Requires manual verification |
+
+**Speed:** 🐢 30 minutes - 2+ hours | **Requires:** GVM installation (complex setup)
+
+---
+
+### 📈 Detailed Feature Matrix
+
+| Feature | WHOIS | DNS | Naabu | httpx | Nuclei | GVM |
+|---------|-------|-----|-------|-------|--------|-----|
+| **Domain Info** | ✅ | ⚠️ | ❌ | ❌ | ❌ | ❌ |
+| **IP Resolution** | ❌ | ✅ | ⚠️ | ✅ | ❌ | ❌ |
+| **Subdomain Discovery** | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Port Scanning** | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ |
+| **Service Detection** | ❌ | ❌ | ⚠️ | ✅ | ⚠️ | ✅ |
+| **Live URL Check** | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| **Technology Detection** | ❌ | ❌ | ❌ | ✅ **+ Wappalyzer** | ⚠️ | ⚠️ |
+| **CMS Plugin Detection** | ❌ | ❌ | ❌ | ✅ **Wappalyzer** | ❌ | ❌ |
+| **TLS/SSL Analysis** | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
+| **CDN Detection** | ❌ | ⚠️ | ✅ | ✅ | ❌ | ❌ |
+| **CVE Detection** | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **CVE Lookup (version)** | ❌ | ❌ | ❌ | ❌ | ✅ **NEW** | ❌ |
+| **Web Vuln Scanning** | ❌ | ❌ | ❌ | ❌ | ✅ | ⚠️ |
+| **XSS/SQLi Testing** | ❌ | ❌ | ❌ | ❌ | ✅ | ⚠️ |
+| **Network Vuln Scan** | ❌ | ❌ | ❌ | ❌ | ⚠️ | ✅ |
+| **Compliance Check** | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+
+**Legend:** ✅ Primary/Excellent | ⚠️ Limited/Basic | ❌ Not supported
+
+> **CVE Lookup (version)**: Queries NVD for CVEs based on detected technology versions (like Nmap's vulners script). Example: Nginx 1.19.0 → finds CVE-2021-23017, CVE-2022-41741, etc.
+
+---
+
+### 🔄 Pipeline Flow & Why This Order
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         REDAMON RECONNAISSANCE PIPELINE                          │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  📋 WHOIS        → Domain ownership, registrar, expiration dates                │
+│       │                                                                         │
+│       ▼                                                                         │
+│  🌐 DNS          → Resolve hostnames to IPs, find subdomains                    │
+│       │                                                                         │
+│       ▼                                                                         │
+│  🚀 Naabu        → Fast port scan to find open services                         │
+│       │              (Feeds port info to httpx)                                 │
+│       ▼                                                                         │
+│  🔬 httpx        → Probe HTTP services, detect technologies                     │
+│       │              (Feeds live URLs + tech versions to Nuclei)                │
+│       ▼                                                                         │
+│  🎯 Nuclei       → Scan for vulnerabilities on live URLs                        │
+│       │              + CVE Lookup for detected technologies                     │
+│       │              (nginx, PHP, jQuery → query NVD for CVEs)                  │
+│       ▼                                                                         │
+│  🛡️ GVM (opt)    → Deep vulnerability assessment (if needed)                    │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 🎯 When to Use Each Tool
+
+| Scenario | Use These Tools |
+|----------|-----------------|
+| **Quick recon** | WHOIS + DNS + Naabu + httpx |
+| **Full web assessment** | All above + Nuclei |
+| **Compliance audit** | All above + GVM |
+| **Bug bounty** | DNS + Naabu + httpx + Nuclei (DAST) |
+| **Penetration test** | Full pipeline + manual testing |
+| **Asset discovery** | WHOIS + DNS + Naabu |
+
+### ⏱️ Time Comparison (Single Target)
+
+| Tool | Typical Duration | Notes |
+|------|------------------|-------|
+| WHOIS | <1 second | Instant |
+| DNS | <1 second | Instant |
+| Naabu | 5-10 seconds | 1000 ports |
+| httpx | 10-30 seconds | All options enabled |
+| Nuclei | 1-30 minutes | Depends on templates |
+| GVM | 30 min - 2+ hours | Full scan |
+
+**Total Quick Scan (WHOIS→Nuclei):** ~2-5 minutes
+**Total Full Scan (with GVM):** 30 min - 2+ hours
 
 ---
 
@@ -340,7 +474,7 @@ For **comprehensive assessment**, use all three in this order:
 # TARGET & MODULES
 # ═══════════════════════════════════════════════════════════════════
 TARGET_DOMAIN = "example.com"
-SCAN_MODULES = ["initial_recon", "nmap", "nuclei"]
+SCAN_MODULES = ["domain_discovery", "port_scan", "http_probe", "vuln_scan"]
 
 # ═══════════════════════════════════════════════════════════════════
 # ANONYMITY (Optional)
@@ -348,15 +482,21 @@ SCAN_MODULES = ["initial_recon", "nmap", "nuclei"]
 USE_TOR_FOR_RECON = False       # Route traffic through Tor
 
 # ═══════════════════════════════════════════════════════════════════
-# NMAP - Network Scanning
+# PORT SCAN - Port Scanning
 # ═══════════════════════════════════════════════════════════════════
-NMAP_USE_DOCKER = True          # Use Docker container
-NMAP_SCAN_TYPE = "thorough"     # fast | thorough | stealth
-NMAP_VULN_SCAN = True           # Enable vulnerability scripts
-NMAP_VULN_INTENSITY = "standard"# light | standard | aggressive
+NAABU_TOP_PORTS = "1000"        # Top ports to scan
+NAABU_RATE_LIMIT = 1000         # Packets per second
+NAABU_SCAN_TYPE = "s"           # SYN scan (requires root)
 
 # ═══════════════════════════════════════════════════════════════════
-# NUCLEI - Web Application Scanning
+# HTTP PROBE - HTTP Probing
+# ═══════════════════════════════════════════════════════════════════
+HTTPX_THREADS = 50              # Concurrent threads
+HTTPX_PROBE_TECH_DETECT = True  # Technology detection
+HTTPX_PROBE_TLS_INFO = True     # TLS certificate info
+
+# ═══════════════════════════════════════════════════════════════════
+# VULN SCAN - Vulnerability Scanning
 # ═══════════════════════════════════════════════════════════════════
 NUCLEI_DAST_MODE = True         # Active fuzzing for XSS, SQLi
 NUCLEI_SEVERITY = ["critical", "high", "medium", "low"]
@@ -376,7 +516,7 @@ GITHUB_TARGET_ORG = "company"   # Organization/username to scan
 
 ### Required
 - **Python 3.8+**
-- **Docker** (for Nmap, Nuclei, and optionally GVM)
+- **Docker** (for Naabu, httpx, Nuclei, and optionally GVM)
 
 ### Optional
 ```bash
@@ -387,12 +527,11 @@ sudo systemctl start tor
 
 ### Docker Images (auto-pulled on first run)
 ```bash
-# Nmap scanner
-docker pull instrumentisto/nmap:latest
-
-# Nuclei scanner + Katana crawler
+# ProjectDiscovery tools
+docker pull projectdiscovery/naabu:latest
+docker pull projectdiscovery/httpx:latest
 docker pull projectdiscovery/nuclei:latest
-docker pull projectdiscovery/katana:latest
+docker pull projectdiscovery/katana:latest  # For DAST crawling
 ```
 
 ---
@@ -409,9 +548,10 @@ RedAmon/
 │   ├── main.py            # 🚀 Entry point - run this!
 │   ├── domain_recon.py    # Subdomain discovery
 │   ├── whois_recon.py     # WHOIS lookup
-│   ├── nmap_scan.py       # Port & vulnerability scanning
-│   ├── nuclei_scan.py     # Web application scanning
-│   ├── github_hunter.py   # GitHub secret hunting
+│   ├── port_scan.py       # Port scanning
+│   ├── http_probe.py      # HTTP probing
+│   ├── vuln_scan.py       # Vulnerability scanning
+│   ├── github_secret_hunt.py  # GitHub secret hunting
 │   └── output/            # 📄 Scan results (JSON)
 │
 ├── gvm_scan/              # GVM/OpenVAS integration
@@ -419,8 +559,9 @@ RedAmon/
 │   └── output/            # GVM results
 │
 ├── readmes/               # 📖 Detailed documentation
-│   ├── README.NMAP.md     # Nmap configuration guide
-│   ├── README.NUCLEI.md   # Nuclei configuration guide
+│   ├── README.PORT_SCAN.md    # Port scan configuration guide
+│   ├── README.HTTP_PROBE.md   # HTTP probe configuration guide
+│   ├── README.VULN_SCAN.md    # Vulnerability scan configuration guide
 │   └── README.GVM.md      # GVM/OpenVAS setup guide
 │
 └── docker-compose.yml     # GVM container orchestration
@@ -436,7 +577,8 @@ All modules write to a single JSON file: `recon/output/recon_<domain>.json`
 {
   "metadata": {
     "target": "example.com",
-    "scan_timestamp": "2024-01-15T10:30:00"
+    "scan_timestamp": "2024-01-15T10:30:00",
+    "modules_executed": ["whois", "subdomain_discovery", "port_scan", "http_probe", "vuln_scan"]
   },
   "whois": {
     "registrar": "GoDaddy",
@@ -447,25 +589,40 @@ All modules write to a single JSON file: `recon/output/recon_<domain>.json`
     "A": ["93.184.216.34"],
     "MX": ["mail.example.com"]
   },
-  "nmap": {
-    "scan_metadata": { "execution_mode": "docker" },
-    "by_target": {
-      "93.184.216.34": {
-        "ports": [
-          {"port": 443, "service": "https", "version": "nginx 1.18"}
-        ],
-        "vulnerabilities": { "total": 3, "critical": 0, "high": 1 }
+  "port_scan": {
+    "by_host": {
+      "example.com": {
+        "ports": [80, 443, 8080],
+        "is_cdn": false
       }
+    },
+    "summary": {
+      "total_open_ports": 15,
+      "hosts_with_open_ports": 3
     }
   },
-  "nuclei": {
-    "scan_metadata": { "dast_mode": true },
-    "discovered_urls": {
-      "dast_urls_with_params": ["https://example.com/search?q=test"]
+  "http_probe": {
+    "by_url": {
+      "https://example.com": {
+        "status_code": 200,
+        "technologies": ["nginx", "PHP", "WordPress"],
+        "server": "nginx/1.18.0"
+      }
     },
+    "summary": {
+      "live_urls": 12,
+      "technology_count": 8
+    }
+  },
+  "vuln_scan": {
     "vulnerabilities": {
       "critical": [],
       "high": [{"template": "cve-2021-44228", "name": "Log4Shell"}]
+    },
+    "summary": {
+      "total_findings": 25,
+      "critical": 0,
+      "high": 1
     }
   }
 }
@@ -477,176 +634,6 @@ All modules write to a single JSON file: `recon/output/recon_<domain>.json`
 
 **GVM (Greenbone Vulnerability Management)** is an open-source vulnerability scanner for comprehensive enterprise security assessment.
 
-### What GVM Does
-
-| Capability | Description |
-|------------|-------------|
-| **80,000+ vulnerability tests** | Comprehensive CVE database coverage |
-| **Misconfiguration detection** | Finds insecure settings and hardening issues |
-| **Compliance checking** | PCI-DSS, HIPAA, CIS benchmarks |
-| **Credential scanning** | Authenticated scans for deeper analysis |
-| **Detailed reporting** | Severity ratings (Critical/High/Medium/Low) |
-
-### Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Docker Compose                            │
-│                                                              │
-│  Python Scanner ──► GVMD (API) ──► OpenVAS-D ──► Redis      │
-│                        │                                     │
-│                   PostgreSQL                                 │
-│                                                              │
-│  + Data containers: NVTs, SCAP, CERT (vulnerability DB)     │
-└─────────────────────────────────────────────────────────────┘
-```
-
-| Component | Purpose |
-|-----------|---------|
-| **GVMD** | Management daemon - exposes API for Python |
-| **OpenVAS-D** | Scanner daemon - executes vulnerability tests |
-| **PostgreSQL** | Stores configs, results, scan history |
-| **Redis** | Inter-process communication |
-| **Data containers** | Download 80K+ vulnerability tests on first run |
-
-### Quick Start
-
-#### 1. Start GVM containers (first time takes 10-15 min)
-
-```bash
-# Pull all required images (first time only)
-docker pull registry.community.greenbone.net/community/redis-server
-docker pull registry.community.greenbone.net/community/pg-gvm:stable
-docker pull registry.community.greenbone.net/community/gvmd:stable
-docker pull registry.community.greenbone.net/community/ospd-openvas:stable
-docker pull registry.community.greenbone.net/community/vulnerability-tests
-docker pull registry.community.greenbone.net/community/notus-data
-docker pull registry.community.greenbone.net/community/scap-data
-docker pull registry.community.greenbone.net/community/cert-bund-data
-docker pull registry.community.greenbone.net/community/dfn-cert-data
-docker pull registry.community.greenbone.net/community/data-objects
-docker pull registry.community.greenbone.net/community/report-formats
-docker pull registry.community.greenbone.net/community/gpg-data
-
-# Start containers
-docker compose up -d
-```
-
-#### 2. Watch logs until ready
-
-```bash
-docker compose logs -f gvmd
-# Wait for: "Starting GVMd" or similar ready message
-
-# More detailed logs
-docker compose logs -f gvmd ospd-openvas python-scanner
-```
-
-#### 3. Create admin user (first time only)
-
-```bash
-docker compose exec -u gvmd gvmd gvmd --create-user=admin --password=admin
-```
-
-#### 4. Run vulnerability scan
-
-```bash
-# Make sure recon was run first for your target domain
-docker compose --profile scanner up python-scanner
-
-# If scanner code changed, rebuild first
-docker compose build python-scanner && docker compose --profile scanner up python-scanner
-```
-
-**Output:** `gvm_scan/output/vuln_<domain>.json`
-
-#### 5. Update GVM vulnerability feeds (recommended weekly)
-
-GVM uses **data containers** that download vulnerability feeds on first startup. To get the latest CVEs and vulnerability tests, you need to re-pull and re-run these containers:
-
-```bash
-# Pull latest feed images (downloads new vulnerability data)
-docker compose pull vulnerability-tests notus-data scap-data cert-bund-data dfn-cert-data data-objects report-formats
-
-# Re-run data containers to update volumes
-docker compose up vulnerability-tests notus-data scap-data cert-bund-data dfn-cert-data data-objects report-formats
-
-# Restart gvmd to reload the updated feeds
-docker compose restart gvmd
-
-# Wait for gvmd to sync (check logs)
-docker compose logs -f gvmd
-# Look for: "Updating VTs in database ... done"
-```
-
-**What gets updated:**
-
-| Feed | Contents | Why Update |
-|------|----------|------------|
-| `vulnerability-tests` | 170,000+ NVT scripts (.nasl) | New vulnerability checks |
-| `scap-data` | CVE definitions, CVSS scores from NIST | New CVE entries |
-| `cert-bund-data` | German CERT security advisories | New security bulletins |
-| `dfn-cert-data` | DFN-CERT advisories | Research network alerts |
-| `notus-data` | Package vulnerability data | OS package CVE mappings |
-| `data-objects` | Scan configs, policies | Updated scan profiles |
-| `report-formats` | Report templates | Output format updates |
-
-**Update frequency:** Greenbone updates feeds **daily**. Recommended to update weekly or before important scans.
-
-### Docker Commands Reference
-
-```bash
-# Start GVM
-docker compose up -d
-
-# Stop GVM  
-docker compose down
-
-# View logs
-docker compose logs -f gvmd
-
-# Check status
-docker compose ps
-
-# Run Python scanner
-docker compose --profile scanner up python-scanner
-
-# Reset everything (delete all data)
-docker compose down -v
-```
-
-### GVM Configuration (`params.py`)
-
-```python
-# Use targets from recon scan
-USE_RECON_FOR_TARGET = True
-
-# Or specify targets manually
-GVM_IP_LIST = ["192.168.1.1", "192.168.1.2"]
-GVM_HOSTNAME_LIST = ["example.com"]
-
-# Scan configuration preset
-GVM_SCAN_CONFIG = "Full and fast"  # Options:
-# - "Full and fast"           - Comprehensive, good performance (recommended)
-# - "Full and fast ultimate"  - Most thorough, slower
-# - "Discovery"               - Network discovery only
-
-# Scan targets strategy
-GVM_SCAN_TARGETS = "both"  # both | ips_only | hostnames_only
-
-# Task timeout (GVM scans can take hours)
-GVM_TASK_TIMEOUT = 14400  # 4 hours
-```
-
-### Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| "Failed to connect to GVM" | Wait for gvmd to finish starting (check logs) |
-| "OpenVAS scanner not found" | Data sync still in progress, wait 10-15 min |
-| Scan takes too long | Reduce targets or use "Discovery" scan config |
-| Out of disk space | GVM needs ~20GB for vulnerability data |
-
 📖 **Detailed documentation:** [readmes/README.GVM.md](readmes/README.GVM.md)
 
 ---
@@ -657,20 +644,16 @@ Safe, **legal** targets specifically designed for security testing. No authoriza
 
 ### Acunetix Vulnweb (Recommended)
 
-Acunetix provides intentionally vulnerable web applications at **vulnweb.com**:
-
 | Target | Technology | Vulnerabilities |
 |--------|------------|-----------------|
 | `testphp.vulnweb.com` | PHP + MySQL | SQL Injection, XSS, File Upload, LFI, CSRF |
-| `testhtml5.vulnweb.com` | HTML5 + JavaScript | DOM XSS, Client-side attacks, HTML5 security |
-| `testasp.vulnweb.com` | ASP.NET + SQL Server | SQL Injection, XSS, Authentication flaws |
-
-**🎯 Best for testing:** These sites have real vulnerabilities that Nuclei DAST mode and Nmap vuln scripts will detect.
+| `testhtml5.vulnweb.com` | HTML5 + JavaScript | DOM XSS, Client-side attacks |
+| `testasp.vulnweb.com` | ASP.NET + SQL Server | SQL Injection, XSS |
 
 ```python
 # Example: Test with vulnweb
 TARGET_DOMAIN = "testphp.vulnweb.com"
-SCAN_MODULES = ["initial_recon", "nmap", "nuclei"]
+SCAN_MODULES = ["domain_discovery", "port_scan", "http_probe", "vuln_scan"]
 NUCLEI_DAST_MODE = True  # Will find XSS, SQLi
 ```
 
@@ -678,19 +661,9 @@ NUCLEI_DAST_MODE = True  # Will find XSS, SQLi
 
 | Target | Description |
 |--------|-------------|
-| `scanme.nmap.org` | Nmap's official test target (port scanning only) |
-| `demo.testfire.net` | IBM AppScan demo banking app (Altoro Mutual) |
-| `juice-shop.herokuapp.com` | OWASP Juice Shop - modern vulnerable app |
-| `hack-yourself-first.com` | Troy Hunt's vulnerable ASP.NET site |
-
-### OWASP WebGoat (Local)
-
-For offline testing, run OWASP WebGoat locally:
-
-```bash
-docker run -p 8080:8080 webgoat/webgoat
-# Then scan: TARGET_DOMAIN = "localhost:8080"
-```
+| `scanme.nmap.org` | Test target (port scanning only) |
+| `demo.testfire.net` | IBM AppScan demo banking app |
+| `juice-shop.herokuapp.com` | OWASP Juice Shop |
 
 ---
 
@@ -710,6 +683,7 @@ Unauthorized scanning is illegal in most jurisdictions. RedAmon is intended for:
 
 | Module | Documentation |
 |--------|---------------|
-| Nmap | [readmes/README.NMAP.md](readmes/README.NMAP.md) |
-| Nuclei | [readmes/README.NUCLEI.md](readmes/README.NUCLEI.md) |
+| Port Scan | [readmes/README.PORT_SCAN.md](readmes/README.PORT_SCAN.md) |
+| HTTP Probe | [readmes/README.HTTP_PROBE.md](readmes/README.HTTP_PROBE.md) |
+| Vuln Scan | [readmes/README.VULN_SCAN.md](readmes/README.VULN_SCAN.md) |
 | GVM/OpenVAS | [readmes/README.GVM.md](readmes/README.GVM.md) |

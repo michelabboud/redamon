@@ -5,12 +5,8 @@ RedAmon - Main Reconnaissance Controller
 Orchestrates all OSINT reconnaissance modules:
 1. WHOIS lookup (integrated into domain recon JSON)
 2. Subdomain discovery & DNS resolution
-3. Port scanning (fast, lightweight)
-4. HTTP probing & technology detection
-5. Vulnerability scanning (web application vulns)
-6. GitHub secret hunting (separate JSON output)
-
-Pipeline: domain_discovery -> port_scan -> http_probe -> vuln_scan -> github
+3. Nmap port & service scanning (enriches domain recon JSON)
+4. GitHub secret hunting (separate JSON output)
 
 Run this file to execute the full recon pipeline.
 """
@@ -38,9 +34,8 @@ from params import (
 from recon.whois_recon import whois_lookup
 from recon.domain_recon import discover_subdomains
 from recon.github_secret_hunt import GitHubSecretHunter
-from recon.port_scan import run_port_scan
-from recon.http_probe import run_http_probe
-from recon.vuln_scan import run_vuln_scan
+from recon.nmap_scan import run_nmap_scan
+from recon.nuclei_scan import run_nuclei_scan
 
 # Output directory
 OUTPUT_DIR = Path(__file__).parent / "output"
@@ -76,14 +71,12 @@ def parse_target(target: str) -> dict:
 def build_scan_type() -> str:
     """Build dynamic scan type based on enabled modules."""
     modules = []
-    if "domain_discovery" in SCAN_MODULES:
-        modules.append("domain_discovery")
-    if "port_scan" in SCAN_MODULES:
-        modules.append("port_scan")
-    if "http_probe" in SCAN_MODULES:
-        modules.append("http_probe")
-    if "vuln_scan" in SCAN_MODULES:
-        modules.append("vuln_scan")
+    if "initial_recon" in SCAN_MODULES:
+        modules.append("domain_recon")
+    if "nmap" in SCAN_MODULES:
+        modules.append("nmap")
+    if "nuclei" in SCAN_MODULES:
+        modules.append("nuclei")
     if "github" in SCAN_MODULES:
         modules.append("github")
     return "_".join(modules) if modules else "custom"
@@ -151,7 +144,6 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
             "bruteforce_mode": bruteforce if not is_subdomain_mode else False,
             "modules_executed": []
         },
-        "domain": target,
         "whois": {},
         "subdomains": [],
         "subdomain_count": 0,
@@ -229,49 +221,34 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
     save_recon_file(combined_result, output_file)
     print(f"[+] Saved: {output_file}")
 
-    # Step 3: Port scanning (fast port discovery)
-    if "port_scan" in SCAN_MODULES:
-        combined_result = run_port_scan(combined_result, output_file=output_file)
-        combined_result["metadata"]["modules_executed"].append("port_scan")
+    # Step 4: Nmap port scanning (enriches the data, saves incrementally)
+    if "nmap" in SCAN_MODULES:
+        combined_result = run_nmap_scan(combined_result, output_file=output_file)
+        combined_result["metadata"]["modules_executed"].append("nmap_scan")
         save_recon_file(combined_result, output_file)
 
-    # Step 4: HTTP probing (technology detection, live URL discovery)
-    if "http_probe" in SCAN_MODULES:
-        combined_result = run_http_probe(combined_result, output_file=output_file)
-        combined_result["metadata"]["modules_executed"].append("http_probe")
+    # Step 5: Nuclei vulnerability scanning (enriches the data, saves incrementally)
+    if "nuclei" in SCAN_MODULES:
+        combined_result = run_nuclei_scan(combined_result, output_file=output_file)
+        combined_result["metadata"]["modules_executed"].append("nuclei_scan")
         save_recon_file(combined_result, output_file)
 
-    # Step 5: Vulnerability scanning (web application vulns)
-    if "vuln_scan" in SCAN_MODULES:
-        combined_result = run_vuln_scan(combined_result, output_file=output_file)
-        combined_result["metadata"]["modules_executed"].append("vuln_scan")
-        save_recon_file(combined_result, output_file)
-
-    # Print summary
     print(f"\n{'=' * 70}")
     print(f"[+] DOMAIN RECON COMPLETE")
     if is_subdomain_mode:
         print(f"[+] Mode: Subdomain only ({target})")
     else:
         print(f"[+] Subdomains found: {combined_result['subdomain_count']}")
-    
-    # Port scan stats
-    if "port_scan" in SCAN_MODULES and "port_scan" in combined_result:
-        port_summary = combined_result["port_scan"].get("summary", {})
-        print(f"[+] Open ports: {port_summary.get('total_open_ports', 0)}")
-    
-    # HTTP probe stats
-    if "http_probe" in SCAN_MODULES and "http_probe" in combined_result:
-        http_summary = combined_result["http_probe"].get("summary", {})
-        print(f"[+] Live URLs: {http_summary.get('live_urls', 0)}")
-        print(f"[+] Technologies: {http_summary.get('technology_count', 0)}")
-    
-    # Vuln scan stats
-    if "vuln_scan" in SCAN_MODULES and "vuln_scan" in combined_result:
-        vuln_summary = combined_result["vuln_scan"].get("summary", {})
-        vuln_total = combined_result["vuln_scan"].get("vulnerabilities", {}).get("total", 0)
-        print(f"[+] Vuln findings: {vuln_summary.get('total_findings', 0)} ({vuln_total} vulnerabilities)")
-    
+    if "nmap" in SCAN_MODULES and "nmap" in combined_result:
+        nmap_data = combined_result["nmap"]
+        summary = nmap_data.get("summary", {})
+        total_ports = summary.get("total_tcp_ports", 0) + summary.get("total_udp_ports", 0)
+        print(f"[+] Open ports found: {total_ports}")
+    if "nuclei" in SCAN_MODULES and "nuclei" in combined_result:
+        nuclei_data = combined_result["nuclei"]
+        nuclei_summary = nuclei_data.get("summary", {})
+        nuclei_vulns = nuclei_data.get("vulnerabilities", {}).get("total", 0)
+        print(f"[+] Nuclei findings: {nuclei_summary.get('total_findings', 0)} ({nuclei_vulns} vulnerabilities)")
     print(f"[+] Output saved: {output_file}")
     print(f"{'=' * 70}")
 
@@ -310,8 +287,6 @@ def main():
     """
     Main entry point - runs the complete recon pipeline.
 
-    Pipeline: domain_discovery -> port_scan -> http_probe -> vuln_scan -> github
-
     Smart target detection:
     - If TARGET_DOMAIN is a root domain (e.g., "example.com"): full subdomain discovery
     - If TARGET_DOMAIN is a subdomain (e.g., "www.example.com"): scan only that subdomain
@@ -349,7 +324,7 @@ def main():
     # Phase 1 & 2: Domain recon (WHOIS + Subdomains + DNS) - Combined JSON
     output_file = Path(__file__).parent / "output" / f"recon_{TARGET_DOMAIN}.json"
     
-    if "domain_discovery" in SCAN_MODULES:
+    if "initial_recon" in SCAN_MODULES:
         domain_result = run_domain_recon(
             TARGET_DOMAIN,
             anonymous=USE_TOR_FOR_RECON,
@@ -357,40 +332,32 @@ def main():
             target_info=target_info
         )
     else:
-        # Load existing recon file if domain_discovery not in modules
+        # Load existing recon file if initial_recon not in modules
         if output_file.exists():
+            import json
             with open(output_file, 'r') as f:
                 domain_result = json.load(f)
             print(f"[*] Loaded existing recon file: {output_file}")
         else:
             print(f"[!] No existing recon file found: {output_file}")
-            print(f"[!] Add 'domain_discovery' to SCAN_MODULES to create it first")
+            print(f"[!] Add 'initial_recon' to SCAN_MODULES to create it first")
             return 1
         
-        # Run port_scan if in SCAN_MODULES (when domain_discovery is skipped)
-        if "port_scan" in SCAN_MODULES:
-            domain_result = run_port_scan(domain_result, output_file=output_file)
+        # Run nmap if in SCAN_MODULES (when initial_recon is skipped)
+        if "nmap" in SCAN_MODULES:
+            domain_result = run_nmap_scan(domain_result, output_file=output_file)
             if "metadata" in domain_result and "modules_executed" in domain_result["metadata"]:
-                if "port_scan" not in domain_result["metadata"]["modules_executed"]:
-                    domain_result["metadata"]["modules_executed"].append("port_scan")
+                if "nmap_scan" not in domain_result["metadata"]["modules_executed"]:
+                    domain_result["metadata"]["modules_executed"].append("nmap_scan")
             with open(output_file, 'w') as f:
                 json.dump(domain_result, f, indent=2)
         
-        # Run http_probe if in SCAN_MODULES (when domain_discovery is skipped)
-        if "http_probe" in SCAN_MODULES:
-            domain_result = run_http_probe(domain_result, output_file=output_file)
+        # Run nuclei if in SCAN_MODULES (when initial_recon is skipped)
+        if "nuclei" in SCAN_MODULES:
+            domain_result = run_nuclei_scan(domain_result, output_file=output_file)
             if "metadata" in domain_result and "modules_executed" in domain_result["metadata"]:
-                if "http_probe" not in domain_result["metadata"]["modules_executed"]:
-                    domain_result["metadata"]["modules_executed"].append("http_probe")
-            with open(output_file, 'w') as f:
-                json.dump(domain_result, f, indent=2)
-        
-        # Run vuln_scan if in SCAN_MODULES (when domain_discovery is skipped)
-        if "vuln_scan" in SCAN_MODULES:
-            domain_result = run_vuln_scan(domain_result, output_file=output_file)
-            if "metadata" in domain_result and "modules_executed" in domain_result["metadata"]:
-                if "vuln_scan" not in domain_result["metadata"]["modules_executed"]:
-                    domain_result["metadata"]["modules_executed"].append("vuln_scan")
+                if "nuclei_scan" not in domain_result["metadata"]["modules_executed"]:
+                    domain_result["metadata"]["modules_executed"].append("nuclei_scan")
             with open(output_file, 'w') as f:
                 json.dump(domain_result, f, indent=2)
 
@@ -416,56 +383,41 @@ def main():
         print(f"║  Root domain: {target_info['root_domain']}" + " " * (53 - len(target_info['root_domain'])) + "║")
     else:
         print(f"║  Mode: Full domain scan" + " " * 44 + "║")
-        print(f"║  Subdomains found: {domain_result.get('subdomain_count', 0)}" + " " * (48 - len(str(domain_result.get('subdomain_count', 0)))) + "║")
+        print(f"║  Subdomains found: {domain_result['subdomain_count']}" + " " * (48 - len(str(domain_result['subdomain_count']))) + "║")
 
-    # Port scan stats
-    if "port_scan" in SCAN_MODULES and "port_scan" in domain_result:
-        port_summary = domain_result["port_scan"].get("summary", {})
-        ports = port_summary.get('total_open_ports', 0)
-        hosts = port_summary.get('hosts_with_open_ports', 0)
-        port_info = f"{hosts} hosts, {ports} ports"
-        print(f"║  Port Scan: {port_info}" + " " * (55 - len(port_info)) + "║")
-    elif "port_scan" not in SCAN_MODULES:
-        print(f"║  Port scan: SKIPPED" + " " * 48 + "║")
+    # Nmap stats
+    if "nmap" in SCAN_MODULES and "nmap" in domain_result:
+        nmap_data = domain_result["nmap"]
+        summary = nmap_data.get("summary", {})
+        ips_scanned = summary.get("ips_scanned", 0)
+        hostnames_scanned = summary.get("hostnames_scanned", 0)
+        total_ports = summary.get("total_tcp_ports", 0) + summary.get("total_udp_ports", 0)
+        nmap_info = f"{ips_scanned} IPs, {hostnames_scanned} hosts, {total_ports} ports"
+        print(f"║  Nmap: {nmap_info}" + " " * (60 - len(nmap_info)) + "║")
+    elif "nmap" not in SCAN_MODULES:
+        print(f"║  Nmap scan: SKIPPED" + " " * 48 + "║")
 
-    # HTTP probe stats
-    if "http_probe" in SCAN_MODULES and "http_probe" in domain_result:
-        http_summary = domain_result["http_probe"].get("summary", {})
-        live = http_summary.get('live_urls', 0)
-        techs = http_summary.get('technology_count', 0)
-        http_info = f"{live} live URLs, {techs} technologies"
-        print(f"║  HTTP Probe: {http_info}" + " " * (54 - len(http_info)) + "║")
-    elif "http_probe" not in SCAN_MODULES:
-        print(f"║  HTTP probe: SKIPPED" + " " * 47 + "║")
-
-    # Vuln scan stats
-    if "vuln_scan" in SCAN_MODULES and "vuln_scan" in domain_result:
-        vuln_summary = domain_result["vuln_scan"].get("summary", {})
-        total_findings = vuln_summary.get("total_findings", 0)
-        crit = vuln_summary.get("critical", 0)
-        high = vuln_summary.get("high", 0)
-        vuln_info = f"{total_findings} findings"
+    # Nuclei stats
+    if "nuclei" in SCAN_MODULES and "nuclei" in domain_result:
+        nuclei_data = domain_result["nuclei"]
+        nuclei_summary = nuclei_data.get("summary", {})
+        total_findings = nuclei_summary.get("total_findings", 0)
+        crit = nuclei_summary.get("critical", 0)
+        high = nuclei_summary.get("high", 0)
+        nuclei_info = f"{total_findings} findings"
         if crit > 0 or high > 0:
-            vuln_info += f" ({crit} critical, {high} high)"
-        print(f"║  Vuln Scan: {vuln_info}" + " " * (55 - len(vuln_info)) + "║")
-    elif "vuln_scan" not in SCAN_MODULES:
-        print(f"║  Vuln scan: SKIPPED" + " " * 48 + "║")
+            nuclei_info += f" ({crit} critical, {high} high)"
+        print(f"║  Nuclei: {nuclei_info}" + " " * (58 - len(nuclei_info)) + "║")
+    elif "nuclei" not in SCAN_MODULES:
+        print(f"║  Nuclei scan: SKIPPED" + " " * 46 + "║")
 
     github_status = str(len(github_findings)) if "github" in SCAN_MODULES else "SKIPPED"
     print(f"║  GitHub findings: {github_status}" + " " * (49 - len(github_status)) + "║")
     print("╠" + "═" * 68 + "╣")
     print("║  Output Files:" + " " * 53 + "║")
-    
-    # Build suffix string
-    suffixes = []
-    if "port_scan" in SCAN_MODULES:
-        suffixes.append("PortScan")
-    if "http_probe" in SCAN_MODULES:
-        suffixes.append("HTTPProbe")
-    if "vuln_scan" in SCAN_MODULES:
-        suffixes.append("VulnScan")
-    all_suffixes = " + " + " + ".join(suffixes) if suffixes else ""
-    
+    nmap_suffix = " + Nmap" if "nmap" in SCAN_MODULES else ""
+    nuclei_suffix = " + Nuclei" if "nuclei" in SCAN_MODULES else ""
+    all_suffixes = nmap_suffix + nuclei_suffix
     if is_subdomain_mode:
         print(f"║    • recon_{TARGET_DOMAIN}.json (WHOIS + DNS{all_suffixes})" + " " * max(0, 18 - len(TARGET_DOMAIN) - len(all_suffixes)) + "║")
     else:
@@ -480,3 +432,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
