@@ -8,11 +8,12 @@ import { NodeDrawer } from './components/NodeDrawer'
 import { AIAssistantDrawer } from './components/AIAssistantDrawer'
 import { PageBottomBar } from './components/PageBottomBar'
 import { ReconConfirmModal } from './components/ReconConfirmModal'
+import { GvmConfirmModal } from './components/GvmConfirmModal'
 import { ReconLogsDrawer } from './components/ReconLogsDrawer'
 import { useGraphData, useDimensions, useNodeSelection } from './hooks'
-import { useTheme, useSession, useReconStatus, useReconSSE, useGvmStatus, useGvmSSE } from '@/hooks'
+import { useTheme, useSession, useReconStatus, useReconSSE, useGvmStatus, useGvmSSE, useGithubHuntStatus, useGithubHuntSSE } from '@/hooks'
 import { useProject } from '@/providers/ProjectProvider'
-import { GVM_PHASES } from '@/lib/recon-types'
+import { GVM_PHASES, GITHUB_HUNT_PHASES } from '@/lib/recon-types'
 import styles from './page.module.css'
 
 export default function GraphPage() {
@@ -23,11 +24,13 @@ export default function GraphPage() {
   const [showLabels, setShowLabels] = useState(true)
   const [isAIOpen, setIsAIOpen] = useState(false)
   const [isReconModalOpen, setIsReconModalOpen] = useState(false)
-  const [isLogsOpen, setIsLogsOpen] = useState(false)
-  const [isGvmLogsOpen, setIsGvmLogsOpen] = useState(false)
+  const [activeLogsDrawer, setActiveLogsDrawer] = useState<'recon' | 'gvm' | 'githubHunt' | null>(null)
   const [hasReconData, setHasReconData] = useState(false)
   const [hasGvmData, setHasGvmData] = useState(false)
+  const [hasGithubHuntData, setHasGithubHuntData] = useState(false)
   const [graphStats, setGraphStats] = useState<{ totalNodes: number; nodesByType: Record<string, number> } | null>(null)
+  const [gvmStats, setGvmStats] = useState<{ totalGvmNodes: number; nodesByType: Record<string, number> } | null>(null)
+  const [isGvmModalOpen, setIsGvmModalOpen] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
 
   const { selectedNode, drawerOpen, selectNode, clearSelection } = useNodeSelection()
@@ -87,6 +90,29 @@ export default function GraphPage() {
     enabled: gvmState?.status === 'running' || gvmState?.status === 'starting',
   })
 
+  // GitHub Hunt status hook
+  const {
+    state: githubHuntState,
+    isLoading: isGithubHuntLoading,
+    startGithubHunt,
+  } = useGithubHuntStatus({
+    projectId,
+    enabled: !!projectId,
+  })
+
+  const isGithubHuntRunning = githubHuntState?.status === 'running' || githubHuntState?.status === 'starting'
+
+  // GitHub Hunt logs SSE hook
+  const {
+    logs: githubHuntLogs,
+    currentPhase: githubHuntCurrentPhase,
+    currentPhaseNumber: githubHuntCurrentPhaseNumber,
+    clearLogs: clearGithubHuntLogs,
+  } = useGithubHuntSSE({
+    projectId,
+    enabled: githubHuntState?.status === 'running' || githubHuntState?.status === 'starting',
+  })
+
   // Check if recon data exists
   const checkReconData = useCallback(async () => {
     if (!projectId) return
@@ -115,6 +141,26 @@ export default function GraphPage() {
     }
   }, [data])
 
+  // Calculate GVM-specific stats from graph data
+  useEffect(() => {
+    if (data?.nodes) {
+      const gvmTypes: Record<string, number> = {}
+      let total = 0
+      data.nodes.forEach(node => {
+        const isGvmVuln = node.type === 'Vulnerability' && node.properties?.source === 'gvm'
+        const isGvmTech = node.type === 'Technology' && node.properties?.detected_by?.includes('gvm')
+        if (isGvmVuln || isGvmTech) {
+          const type = node.type || 'Unknown'
+          gvmTypes[type] = (gvmTypes[type] || 0) + 1
+          total++
+        }
+      })
+      setGvmStats(total > 0 ? { totalGvmNodes: total, nodesByType: gvmTypes } : null)
+    } else {
+      setGvmStats(null)
+    }
+  }, [data])
+
   // Check if GVM data exists
   const checkGvmData = useCallback(async () => {
     if (!projectId) return
@@ -126,11 +172,23 @@ export default function GraphPage() {
     }
   }, [projectId])
 
-  // Check for recon/GVM data on mount and when project changes
+  // Check if GitHub Hunt data exists
+  const checkGithubHuntData = useCallback(async () => {
+    if (!projectId) return
+    try {
+      const response = await fetch(`/api/github-hunt/${projectId}/download`, { method: 'HEAD' })
+      setHasGithubHuntData(response.ok)
+    } catch {
+      setHasGithubHuntData(false)
+    }
+  }, [projectId])
+
+  // Check for recon/GVM/GitHub Hunt data on mount and when project changes
   useEffect(() => {
     checkReconData()
     checkGvmData()
-  }, [checkReconData, checkGvmData])
+    checkGithubHuntData()
+  }, [checkReconData, checkGvmData, checkGithubHuntData])
 
   // Refresh graph data when recon completes
   useEffect(() => {
@@ -148,21 +206,13 @@ export default function GraphPage() {
     }
   }, [gvmState?.status, refetchGraph, checkGvmData])
 
-  // Auto-open logs when recon starts
+  // Refresh when GitHub Hunt completes
   useEffect(() => {
-    if (reconState?.status === 'running' || reconState?.status === 'starting') {
-      setIsLogsOpen(true)
-      setIsGvmLogsOpen(false)
+    if (githubHuntState?.status === 'completed' || githubHuntState?.status === 'error') {
+      refetchGraph()
+      checkGithubHuntData()
     }
-  }, [reconState?.status])
-
-  // Auto-open GVM logs when GVM scan starts
-  useEffect(() => {
-    if (gvmState?.status === 'running' || gvmState?.status === 'starting') {
-      setIsGvmLogsOpen(true)
-      setIsLogsOpen(false)
-    }
-  }, [gvmState?.status])
+  }, [githubHuntState?.status, refetchGraph, checkGithubHuntData])
 
   const handleToggleAI = useCallback(() => {
     setIsAIOpen((prev) => !prev)
@@ -181,7 +231,7 @@ export default function GraphPage() {
     const result = await startRecon()
     if (result) {
       setIsReconModalOpen(false)
-      setIsLogsOpen(true)
+      setActiveLogsDrawer('recon')
     }
   }, [startRecon, clearLogs])
 
@@ -204,15 +254,19 @@ export default function GraphPage() {
   }, [projectId, refetchGraph])
 
   const handleToggleLogs = useCallback(() => {
-    setIsLogsOpen(prev => !prev)
+    setActiveLogsDrawer(prev => prev === 'recon' ? null : 'recon')
   }, [])
 
-  const handleStartGvm = useCallback(async () => {
+  const handleStartGvm = useCallback(() => {
+    setIsGvmModalOpen(true)
+  }, [])
+
+  const handleConfirmGvm = useCallback(async () => {
     clearGvmLogs()
     const result = await startGvm()
     if (result) {
-      setIsGvmLogsOpen(true)
-      setIsLogsOpen(false)
+      setIsGvmModalOpen(false)
+      setActiveLogsDrawer('gvm')
     }
   }, [startGvm, clearGvmLogs])
 
@@ -222,7 +276,24 @@ export default function GraphPage() {
   }, [projectId])
 
   const handleToggleGvmLogs = useCallback(() => {
-    setIsGvmLogsOpen(prev => !prev)
+    setActiveLogsDrawer(prev => prev === 'gvm' ? null : 'gvm')
+  }, [])
+
+  const handleStartGithubHunt = useCallback(async () => {
+    clearGithubHuntLogs()
+    const result = await startGithubHunt()
+    if (result) {
+      setActiveLogsDrawer('githubHunt')
+    }
+  }, [startGithubHunt, clearGithubHuntLogs])
+
+  const handleDownloadGithubHuntJSON = useCallback(async () => {
+    if (!projectId) return
+    window.open(`/api/github-hunt/${projectId}/download`, '_blank')
+  }, [projectId])
+
+  const handleToggleGithubHuntLogs = useCallback(() => {
+    setActiveLogsDrawer(prev => prev === 'githubHunt' ? null : 'githubHunt')
   }, [])
 
   // Show message if no project is selected
@@ -259,14 +330,21 @@ export default function GraphPage() {
         onToggleLogs={handleToggleLogs}
         reconStatus={reconState?.status || 'idle'}
         hasReconData={hasReconData}
-        isLogsOpen={isLogsOpen}
+        isLogsOpen={activeLogsDrawer === 'recon'}
         // GVM props
         onStartGvm={handleStartGvm}
         onDownloadGvmJSON={handleDownloadGvmJSON}
         onToggleGvmLogs={handleToggleGvmLogs}
         gvmStatus={gvmState?.status || 'idle'}
         hasGvmData={hasGvmData}
-        isGvmLogsOpen={isGvmLogsOpen}
+        isGvmLogsOpen={activeLogsDrawer === 'gvm'}
+        // GitHub Hunt props
+        onStartGithubHunt={handleStartGithubHunt}
+        onDownloadGithubHuntJSON={handleDownloadGithubHuntJSON}
+        onToggleGithubHuntLogs={handleToggleGithubHuntLogs}
+        githubHuntStatus={githubHuntState?.status || 'idle'}
+        hasGithubHuntData={hasGithubHuntData}
+        isGithubHuntLogsOpen={activeLogsDrawer === 'githubHunt'}
       />
 
       <div className={styles.body}>
@@ -292,19 +370,24 @@ export default function GraphPage() {
             isDark={isDark}
           />
 
+        </div>
+
+        {activeLogsDrawer === 'recon' && (
           <ReconLogsDrawer
-            isOpen={isLogsOpen}
-            onClose={() => setIsLogsOpen(false)}
+            isOpen
+            onClose={() => setActiveLogsDrawer(null)}
             logs={reconLogs}
             currentPhase={currentPhase}
             currentPhaseNumber={currentPhaseNumber}
             status={reconState?.status || 'idle'}
             onClearLogs={clearLogs}
           />
+        )}
 
+        {activeLogsDrawer === 'gvm' && (
           <ReconLogsDrawer
-            isOpen={isGvmLogsOpen}
-            onClose={() => setIsGvmLogsOpen(false)}
+            isOpen
+            onClose={() => setActiveLogsDrawer(null)}
             logs={gvmLogs}
             currentPhase={gvmCurrentPhase}
             currentPhaseNumber={gvmCurrentPhaseNumber}
@@ -314,7 +397,22 @@ export default function GraphPage() {
             phases={GVM_PHASES}
             totalPhases={4}
           />
-        </div>
+        )}
+
+        {activeLogsDrawer === 'githubHunt' && (
+          <ReconLogsDrawer
+            isOpen
+            onClose={() => setActiveLogsDrawer(null)}
+            logs={githubHuntLogs}
+            currentPhase={githubHuntCurrentPhase}
+            currentPhaseNumber={githubHuntCurrentPhaseNumber}
+            status={githubHuntState?.status || 'idle'}
+            onClearLogs={clearGithubHuntLogs}
+            title="GitHub Secret Hunt Logs"
+            phases={GITHUB_HUNT_PHASES}
+            totalPhases={3}
+          />
+        )}
       </div>
 
       <AIAssistantDrawer
@@ -335,6 +433,16 @@ export default function GraphPage() {
         targetDomain={currentProject?.targetDomain || 'Unknown'}
         stats={graphStats}
         isLoading={isReconLoading}
+      />
+
+      <GvmConfirmModal
+        isOpen={isGvmModalOpen}
+        onClose={() => setIsGvmModalOpen(false)}
+        onConfirm={handleConfirmGvm}
+        projectName={currentProject?.name || 'Unknown'}
+        targetDomain={currentProject?.targetDomain || 'Unknown'}
+        stats={gvmStats}
+        isLoading={isGvmLoading}
       />
 
       <PageBottomBar data={data} is3D={is3D} showLabels={showLabels} />

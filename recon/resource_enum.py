@@ -225,17 +225,46 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
 
     print(f"\n  Target URLs: {len(target_urls)}")
     print(f"  Target domains (for GAU): {len(target_domains)}")
+    print(f"  Tor proxy: {use_proxy}")
+    # Katana settings
     print(f"  Katana enabled: {KATANA_ENABLED}")
     if KATANA_ENABLED:
-        print(f"  Katana crawl depth: {KATANA_DEPTH}")
-        print(f"  Katana max URLs: {KATANA_MAX_URLS}")
+        print(f"    Crawl depth: {KATANA_DEPTH}")
+        print(f"    Max URLs: {KATANA_MAX_URLS}")
+        print(f"    Rate limit: {KATANA_RATE_LIMIT} req/s")
+        print(f"    Timeout: {KATANA_TIMEOUT}s")
+        print(f"    JS crawl: {KATANA_JS_CRAWL}")
+        print(f"    Params only: {KATANA_PARAMS_ONLY}")
+        if KATANA_CUSTOM_HEADERS:
+            print(f"    Custom headers: {len(KATANA_CUSTOM_HEADERS)}")
+        if KATANA_EXCLUDE_PATTERNS:
+            print(f"    Exclude patterns: {len(KATANA_EXCLUDE_PATTERNS)}")
+    # GAU settings
     print(f"  GAU enabled: {GAU_ENABLED}")
     if GAU_ENABLED:
-        print(f"  GAU providers: {', '.join(GAU_PROVIDERS)}")
-        print(f"  GAU URL verification: {GAU_VERIFY_URLS}")
+        print(f"    Providers: {', '.join(GAU_PROVIDERS)}")
+        print(f"    Threads: {GAU_THREADS}")
+        print(f"    Timeout: {GAU_TIMEOUT}s")
+        print(f"    Max URLs: {GAU_MAX_URLS}")
+        print(f"    URL verification: {GAU_VERIFY_URLS}")
+        if GAU_VERIFY_URLS:
+            print(f"    Verify rate limit: {GAU_VERIFY_RATE_LIMIT} req/s")
+            print(f"    Verify threads: {GAU_VERIFY_THREADS}")
+            print(f"    Verify timeout: {GAU_VERIFY_TIMEOUT}s")
+        print(f"    Detect methods: {GAU_DETECT_METHODS}")
+        print(f"    Filter dead endpoints: {GAU_FILTER_DEAD_ENDPOINTS}")
+    # Kiterunner settings
     print(f"  Kiterunner enabled: {KITERUNNER_ENABLED}")
     if KITERUNNER_ENABLED:
-        print(f"  Kiterunner wordlists: {', '.join(KITERUNNER_WORDLISTS)}")
+        print(f"    Wordlists: {', '.join(KITERUNNER_WORDLISTS)}")
+        print(f"    Rate limit: {KITERUNNER_RATE_LIMIT} req/s")
+        print(f"    Connections: {KITERUNNER_CONNECTIONS}")
+        print(f"    Timeout: {KITERUNNER_TIMEOUT}s")
+        print(f"    Scan timeout: {KITERUNNER_SCAN_TIMEOUT}s")
+        print(f"    Threads: {KITERUNNER_THREADS}")
+        print(f"    Detect methods: {KITERUNNER_DETECT_METHODS}")
+        if KITERUNNER_DETECT_METHODS:
+            print(f"    Method detection mode: {KITERUNNER_METHOD_DETECTION_MODE}")
     print("=" * 70)
 
     start_time = datetime.now()

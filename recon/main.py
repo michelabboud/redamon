@@ -9,9 +9,8 @@ Orchestrates all OSINT reconnaissance modules:
 4. HTTP probing & technology detection
 5. Resource enumeration (endpoint discovery & classification)
 6. Vulnerability scanning + MITRE CWE/CAPEC enrichment
-7. GitHub secret hunting (separate JSON output)
 
-Pipeline: domain_discovery -> port_scan -> http_probe -> resource_enum -> vuln_scan -> github
+Pipeline: domain_discovery -> port_scan -> http_probe -> resource_enum -> vuln_scan
 
 Note: vuln_scan automatically includes MITRE CWE/CAPEC enrichment for all CVEs.
 
@@ -39,8 +38,6 @@ SUBDOMAIN_LIST = _settings['SUBDOMAIN_LIST']
 USE_TOR_FOR_RECON = _settings['USE_TOR_FOR_RECON']
 USE_BRUTEFORCE_FOR_SUBDOMAINS = _settings['USE_BRUTEFORCE_FOR_SUBDOMAINS']
 SCAN_MODULES = _settings['SCAN_MODULES']
-GITHUB_ACCESS_TOKEN = _settings['GITHUB_ACCESS_TOKEN']
-GITHUB_TARGET_ORG = _settings['GITHUB_TARGET_ORG']
 UPDATE_GRAPH_DB = _settings['UPDATE_GRAPH_DB']
 USER_ID = _settings['USER_ID']
 PROJECT_ID = _settings['PROJECT_ID']
@@ -51,7 +48,6 @@ OWNERSHIP_TXT_PREFIX = _settings['OWNERSHIP_TXT_PREFIX']
 # Import recon modules
 from recon.whois_recon import whois_lookup
 from recon.domain_recon import discover_subdomains, verify_domain_ownership
-from recon.github_secret_hunt import GitHubSecretHunter
 from recon.port_scan import run_port_scan
 from recon.http_probe import run_http_probe
 from recon.resource_enum import run_resource_enum
@@ -163,8 +159,6 @@ def build_scan_type() -> str:
         modules.append("resource_enum")
     if "vuln_scan" in SCAN_MODULES:
         modules.append("vuln_scan")
-    if "github" in SCAN_MODULES:
-        modules.append("github")
     return "_".join(modules) if modules else "custom"
 
 
@@ -213,6 +207,8 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
     print(f"  Anonymous Mode: {anonymous}")
     if not filtered_mode:
         print(f"  Bruteforce Mode: {bruteforce}")
+    print(f"  WHOIS Retries: {_settings.get('WHOIS_RETRIES', 2)}")
+    print(f"  DNS Retries: {_settings.get('DNS_RETRIES', 2)}")
     print("=" * 70 + "\n")
 
     # Setup output file (use PROJECT_ID for filename)
@@ -547,40 +543,11 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
     return combined_result
 
 
-def run_github_recon(token: str, target: str, settings: dict = None) -> list:
-    """
-    Run GitHub secret hunting.
-    Produces a separate JSON file for GitHub findings.
-
-    Args:
-        token: GitHub personal access token
-        target: Organization or username to scan
-        settings: Settings dict from project_settings.get_settings()
-
-    Returns:
-        List of findings
-    """
-    print("\n" + "=" * 70)
-    print("               RedAmon - GitHub Secret Hunt")
-    print("=" * 70)
-    print(f"  Target: {target}")
-    print("=" * 70 + "\n")
-
-    if not token:
-        print("[!] GitHub access token not configured. Skipping GitHub recon.")
-        return []
-
-    hunter = GitHubSecretHunter(token, target, settings=settings)
-    findings = hunter.run()
-
-    return findings
-
-
 def main():
     """
     Main entry point - runs the complete recon pipeline.
 
-    Pipeline: domain_discovery -> port_scan -> http_probe -> resource_enum -> vuln_scan -> github
+    Pipeline: domain_discovery -> port_scan -> http_probe -> resource_enum -> vuln_scan
 
     Scan modes based on SUBDOMAIN_LIST:
     - Empty list []: Full subdomain discovery (discover and scan all subdomains)
@@ -839,13 +806,6 @@ def main():
                     with open(output_file, 'w') as f:
                         json.dump(domain_result, f, indent=2)
 
-    # Phase 3: GitHub secret hunt - Separate JSON (if enabled)
-    github_findings = []
-    if "github" in SCAN_MODULES:
-        github_findings = run_github_recon(GITHUB_ACCESS_TOKEN, GITHUB_TARGET_ORG, settings=_settings)
-    else:
-        print("\n[*] GitHub Secret Hunt: SKIPPED (add 'github' to SCAN_MODULES to enable)")
-
     # Final summary
     end_time = datetime.now()
     duration = (end_time - start_time).total_seconds()
@@ -918,13 +878,8 @@ def main():
     elif "vuln_scan" not in SCAN_MODULES:
         print("  Vuln Scan: SKIPPED")
 
-    github_status = str(len(github_findings)) if "github" in SCAN_MODULES else "SKIPPED"
-    print(f"  GitHub: {github_status}")
-    
     print("─" * 50)
     print("  Output: recon_{}.json".format(PROJECT_ID))
-    if "github" in SCAN_MODULES:
-        print(f"  Output: github_secrets_{GITHUB_TARGET_ORG}.json")
     print("─" * 50)
     print()
 

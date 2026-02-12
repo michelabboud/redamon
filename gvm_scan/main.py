@@ -27,6 +27,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 # Runtime parameters from environment variables (set by orchestrator)
 PROJECT_ID = os.environ.get("PROJECT_ID", "")
+USER_ID = os.environ.get("USER_ID", "")
 TARGET_DOMAIN = os.environ.get("TARGET_DOMAIN", "")
 
 # GVM project settings (fetched from webapp API or defaults)
@@ -177,6 +178,24 @@ def run_vulnerability_scan(
                 "skipped_reason": warning_message
             }
         }
+
+    # Clear previous GVM graph data for this project
+    if project_id and USER_ID:
+        print("[*] Clearing previous GVM graph data...")
+        try:
+            from graph_db import Neo4jClient
+            with Neo4jClient() as graph_client:
+                if graph_client.verify_connection():
+                    clear_stats = graph_client.clear_gvm_data(USER_ID, project_id)
+                    total = (clear_stats["vulnerabilities_deleted"] +
+                             clear_stats["technologies_deleted"] +
+                             clear_stats["cves_deleted"])
+                    print(f"    [+] Cleared: {total} GVM nodes removed, "
+                          f"{clear_stats['technologies_cleaned']} shared technologies cleaned")
+                else:
+                    print("    [!] Could not connect to Neo4j - skipping clear")
+        except Exception as e:
+            print(f"    [!] Failed to clear GVM data (continuing): {e}")
 
     # Extract targets from recon
     ips, hostnames = extract_targets_from_recon(recon_data)

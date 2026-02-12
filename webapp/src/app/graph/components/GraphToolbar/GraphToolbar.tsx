@@ -1,9 +1,9 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { Sparkles, Play, Download, Loader2, Terminal, Settings, Shield } from 'lucide-react'
+import { Sparkles, Play, Download, Loader2, Terminal, Settings, Shield, Github } from 'lucide-react'
 import { Toggle } from '@/components/ui'
-import type { ReconStatus, GvmStatus } from '@/lib/recon-types'
+import type { ReconStatus, GvmStatus, GithubHuntStatus } from '@/lib/recon-types'
 import styles from './GraphToolbar.module.css'
 
 interface GraphToolbarProps {
@@ -31,6 +31,13 @@ interface GraphToolbarProps {
   gvmStatus?: GvmStatus
   hasGvmData?: boolean
   isGvmLogsOpen?: boolean
+  // GitHub Hunt props
+  onStartGithubHunt?: () => void
+  onDownloadGithubHuntJSON?: () => void
+  onToggleGithubHuntLogs?: () => void
+  githubHuntStatus?: GithubHuntStatus
+  hasGithubHuntData?: boolean
+  isGithubHuntLogsOpen?: boolean
 }
 
 export function GraphToolbar({
@@ -58,10 +65,18 @@ export function GraphToolbar({
   gvmStatus = 'idle',
   hasGvmData = false,
   isGvmLogsOpen = false,
+  // GitHub Hunt props
+  onStartGithubHunt,
+  onDownloadGithubHuntJSON,
+  onToggleGithubHuntLogs,
+  githubHuntStatus = 'idle',
+  hasGithubHuntData = false,
+  isGithubHuntLogsOpen = false,
 }: GraphToolbarProps) {
   const router = useRouter()
   const isReconRunning = reconStatus === 'running' || reconStatus === 'starting'
   const isGvmRunning = gvmStatus === 'running' || gvmStatus === 'starting'
+  const isGithubHuntRunning = githubHuntStatus === 'running' || githubHuntStatus === 'starting'
 
   const handleOpenSettings = () => {
     if (projectId) {
@@ -190,6 +205,48 @@ export function GraphToolbar({
             onClick={onDownloadGvmJSON}
             disabled={!hasGvmData || isGvmRunning}
             title={hasGvmData ? 'Download GVM JSON' : 'No GVM data available'}
+          >
+            <Download size={14} />
+          </button>
+
+          <div className={styles.divider} />
+
+          {/* GitHub Secret Hunt Actions */}
+          <button
+            className={`${styles.githubHuntButton} ${isGithubHuntRunning ? styles.githubHuntButtonActive : ''}`}
+            onClick={onStartGithubHunt}
+            disabled={isGithubHuntRunning || !hasReconData}
+            title={
+              !hasReconData
+                ? 'Run recon first'
+                : isGithubHuntRunning
+                ? 'GitHub hunt in progress...'
+                : 'Start GitHub Secret Hunt'
+            }
+          >
+            {isGithubHuntRunning ? (
+              <Loader2 size={14} className={styles.spinner} />
+            ) : (
+              <Github size={14} />
+            )}
+            <span>{isGithubHuntRunning ? 'Hunting...' : 'GitHub Hunt'}</span>
+          </button>
+
+          {isGithubHuntRunning && (
+            <button
+              className={`${styles.logsButton} ${isGithubHuntLogsOpen ? styles.logsButtonActive : ''}`}
+              onClick={onToggleGithubHuntLogs}
+              title="View GitHub Hunt Logs"
+            >
+              <Terminal size={14} />
+            </button>
+          )}
+
+          <button
+            className={styles.downloadButton}
+            onClick={onDownloadGithubHuntJSON}
+            disabled={!hasGithubHuntData || isGithubHuntRunning}
+            title={hasGithubHuntData ? 'Download GitHub Hunt JSON' : 'No GitHub hunt data available'}
           >
             <Download size={14} />
           </button>

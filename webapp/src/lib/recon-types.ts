@@ -37,7 +37,6 @@ export const RECON_PHASES = [
   'Resource Enumeration',
   'Vulnerability Scanning',
   'MITRE Enrichment',
-  'GitHub Secret Hunt',
 ] as const
 
 export type ReconPhase = typeof RECON_PHASES[number]
@@ -68,3 +67,29 @@ export const GVM_PHASES = [
 ] as const
 
 export type GvmPhase = typeof GVM_PHASES[number]
+
+// =============================================================================
+// GitHub Secret Hunt Types
+// =============================================================================
+
+export type GithubHuntStatus = 'idle' | 'starting' | 'running' | 'completed' | 'error' | 'stopping'
+
+export interface GithubHuntState {
+  project_id: string
+  status: GithubHuntStatus
+  current_phase: string | null
+  phase_number: number | null
+  total_phases: number
+  started_at: string | null
+  completed_at: string | null
+  error: string | null
+  container_id?: string | null
+}
+
+export const GITHUB_HUNT_PHASES = [
+  'Loading Settings',
+  'Scanning Repositories',
+  'Complete',
+] as const
+
+export type GithubHuntPhase = typeof GITHUB_HUNT_PHASES[number]

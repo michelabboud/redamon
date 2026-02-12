@@ -220,8 +220,51 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
     print(f"  Scan IPs: {'YES' if NUCLEI_SCAN_ALL_IPS else 'NO (hostnames only)'}")
     print(f"  Severity Filter: {', '.join(NUCLEI_SEVERITY) if NUCLEI_SEVERITY else 'ALL'}")
     print(f"  Rate Limit: {NUCLEI_RATE_LIMIT} req/s")
+    print(f"  Bulk Size: {NUCLEI_BULK_SIZE}")
+    print(f"  Concurrency: {NUCLEI_CONCURRENCY}")
+    print(f"  Timeout: {NUCLEI_TIMEOUT}s")
+    print(f"  Retries: {NUCLEI_RETRIES}")
     if NUCLEI_TAGS:
         print(f"  Tags: {', '.join(NUCLEI_TAGS)}")
+    if NUCLEI_EXCLUDE_TAGS:
+        print(f"  Exclude Tags: {', '.join(NUCLEI_EXCLUDE_TAGS)}")
+    if NUCLEI_TEMPLATES:
+        print(f"  Templates: {', '.join(NUCLEI_TEMPLATES)}")
+    if NUCLEI_EXCLUDE_TEMPLATES:
+        print(f"  Exclude Templates: {', '.join(NUCLEI_EXCLUDE_TEMPLATES)}")
+    print(f"  Headless: {NUCLEI_HEADLESS}")
+    print(f"  Interactsh: {NUCLEI_INTERACTSH}")
+    print(f"  Follow Redirects: {NUCLEI_FOLLOW_REDIRECTS} (max {NUCLEI_MAX_REDIRECTS})")
+    print(f"  New Templates Only: {NUCLEI_NEW_TEMPLATES_ONLY}")
+    print(f"  Auto Update Templates: {NUCLEI_AUTO_UPDATE_TEMPLATES}")
+    # CVE lookup settings
+    print(f"  CVE Lookup: {CVE_LOOKUP_ENABLED}")
+    if CVE_LOOKUP_ENABLED:
+        print(f"    Source: {CVE_LOOKUP_SOURCE}")
+        print(f"    Max CVEs: {CVE_LOOKUP_MAX_CVES}")
+        print(f"    Min CVSS: {CVE_LOOKUP_MIN_CVSS}")
+    # Security checks summary
+    print(f"  Security Checks: {SECURITY_CHECK_ENABLED}")
+    if SECURITY_CHECK_ENABLED:
+        sec_checks_count = sum(1 for v in [
+            SECURITY_CHECK_DIRECT_IP_HTTP, SECURITY_CHECK_DIRECT_IP_HTTPS,
+            SECURITY_CHECK_IP_API_EXPOSED, SECURITY_CHECK_WAF_BYPASS,
+            SECURITY_CHECK_TLS_EXPIRING_SOON, SECURITY_CHECK_MISSING_REFERRER_POLICY,
+            SECURITY_CHECK_MISSING_PERMISSIONS_POLICY, SECURITY_CHECK_MISSING_COOP,
+            SECURITY_CHECK_MISSING_CORP, SECURITY_CHECK_MISSING_COEP,
+            SECURITY_CHECK_CACHE_CONTROL_MISSING, SECURITY_CHECK_LOGIN_NO_HTTPS,
+            SECURITY_CHECK_SESSION_NO_SECURE, SECURITY_CHECK_SESSION_NO_HTTPONLY,
+            SECURITY_CHECK_BASIC_AUTH_NO_TLS, SECURITY_CHECK_SPF_MISSING,
+            SECURITY_CHECK_DMARC_MISSING, SECURITY_CHECK_DNSSEC_MISSING,
+            SECURITY_CHECK_ZONE_TRANSFER, SECURITY_CHECK_ADMIN_PORT_EXPOSED,
+            SECURITY_CHECK_DATABASE_EXPOSED, SECURITY_CHECK_REDIS_NO_AUTH,
+            SECURITY_CHECK_KUBERNETES_API_EXPOSED, SECURITY_CHECK_SMTP_OPEN_RELAY,
+            SECURITY_CHECK_CSP_UNSAFE_INLINE, SECURITY_CHECK_INSECURE_FORM_ACTION,
+            SECURITY_CHECK_NO_RATE_LIMITING,
+        ] if v)
+        print(f"    Active checks: {sec_checks_count}/27")
+        print(f"    Timeout: {SECURITY_CHECK_TIMEOUT}s")
+        print(f"    Max workers: {SECURITY_CHECK_MAX_WORKERS}")
     print("=" * 70 + "\n")
     
     # Create a temporary directory for nuclei files

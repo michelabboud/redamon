@@ -40,15 +40,6 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'WHOIS_MAX_RETRIES': 6,
     'DNS_MAX_RETRIES': 3,
 
-    # GitHub Secret Hunt
-    'GITHUB_ACCESS_TOKEN': os.getenv('GITHUB_ACCESS_TOKEN', ''),
-    'GITHUB_TARGET_ORG': '',
-    'GITHUB_SCAN_MEMBERS': False,
-    'GITHUB_SCAN_GISTS': True,
-    'GITHUB_SCAN_COMMITS': True,
-    'GITHUB_MAX_COMMITS': 100,
-    'GITHUB_OUTPUT_JSON': True,
-
     # Naabu Port Scanner
     'NAABU_DOCKER_IMAGE': 'projectdiscovery/naabu:latest',
     'NAABU_TOP_PORTS': '1000',
@@ -343,15 +334,6 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     # WHOIS/DNS
     settings['WHOIS_MAX_RETRIES'] = project.get('whoisMaxRetries', DEFAULT_SETTINGS['WHOIS_MAX_RETRIES'])
     settings['DNS_MAX_RETRIES'] = project.get('dnsMaxRetries', DEFAULT_SETTINGS['DNS_MAX_RETRIES'])
-
-    # GitHub Secret Hunt
-    settings['GITHUB_ACCESS_TOKEN'] = project.get('githubAccessToken', DEFAULT_SETTINGS['GITHUB_ACCESS_TOKEN'])
-    settings['GITHUB_TARGET_ORG'] = project.get('githubTargetOrg', DEFAULT_SETTINGS['GITHUB_TARGET_ORG'])
-    settings['GITHUB_SCAN_MEMBERS'] = project.get('githubScanMembers', DEFAULT_SETTINGS['GITHUB_SCAN_MEMBERS'])
-    settings['GITHUB_SCAN_GISTS'] = project.get('githubScanGists', DEFAULT_SETTINGS['GITHUB_SCAN_GISTS'])
-    settings['GITHUB_SCAN_COMMITS'] = project.get('githubScanCommits', DEFAULT_SETTINGS['GITHUB_SCAN_COMMITS'])
-    settings['GITHUB_MAX_COMMITS'] = project.get('githubMaxCommits', DEFAULT_SETTINGS['GITHUB_MAX_COMMITS'])
-    settings['GITHUB_OUTPUT_JSON'] = project.get('githubOutputJson', DEFAULT_SETTINGS['GITHUB_OUTPUT_JSON'])
 
     # Naabu Port Scanner
     settings['NAABU_DOCKER_IMAGE'] = project.get('naabuDockerImage', DEFAULT_SETTINGS['NAABU_DOCKER_IMAGE'])

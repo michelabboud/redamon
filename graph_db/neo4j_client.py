@@ -14,6 +14,7 @@ Usage:
 
 import os
 import re
+import json
 from pathlib import Path
 from datetime import datetime
 from urllib.parse import urlparse
@@ -22,6 +23,219 @@ from dotenv import load_dotenv
 
 # Load environment variables from local .env file
 load_dotenv(Path(__file__).parent / ".env")
+
+
+# =============================================================================
+# CPE Parsing & Resolution Helpers (for GVM Technology Integration)
+# =============================================================================
+
+# Curated display names for non-HTTP technologies detected by GVM
+_GVM_DISPLAY_NAMES = {
+    # SSH / Security
+    ("openbsd", "openssh"): "OpenSSH",
+    ("openssl", "openssl"): "OpenSSL",
+    # Operating Systems
+    ("canonical", "ubuntu_linux"): "Ubuntu",
+    ("linux", "kernel"): "Linux",
+    ("debian", "debian_linux"): "Debian",
+    ("centos", "centos"): "CentOS",
+    ("redhat", "enterprise_linux"): "Red Hat Enterprise Linux",
+    ("microsoft", "windows"): "Windows",
+    ("freebsd", "freebsd"): "FreeBSD",
+    ("apple", "mac_os_x"): "macOS",
+    ("alpinelinux", "alpine_linux"): "Alpine Linux",
+    ("fedoraproject", "fedora"): "Fedora",
+    ("oracle", "linux"): "Oracle Linux",
+    ("suse", "linux_enterprise_server"): "SUSE Linux",
+    ("amazon", "linux"): "Amazon Linux",
+    # FTP / Mail / DNS
+    ("proftpd", "proftpd"): "ProFTPD",
+    ("vsftpd_project", "vsftpd"): "vsftpd",
+    ("pureftpd", "pure-ftpd"): "Pure-FTPd",
+    ("postfix", "postfix"): "Postfix",
+    ("exim", "exim"): "Exim",
+    ("dovecot", "dovecot"): "Dovecot",
+    ("isc", "bind"): "BIND",
+    ("samba", "samba"): "Samba",
+}
+
+# Reverse CPE mappings: (vendor, product) -> display name
+# Inlined from recon/helpers/cve_helpers.py CPE_MAPPINGS to avoid cross-module imports
+_REVERSE_CPE_MAPPINGS = {
+    ("f5", "nginx"): "Nginx",
+    ("apache", "http_server"): "Apache HTTP Server",
+    ("microsoft", "internet_information_services"): "IIS",
+    ("apache", "tomcat"): "Apache Tomcat",
+    ("lighttpd", "lighttpd"): "Lighttpd",
+    ("caddyserver", "caddy"): "Caddy",
+    ("litespeedtech", "litespeed_web_server"): "LiteSpeed",
+    ("gunicorn", "gunicorn"): "Gunicorn",
+    ("encode", "uvicorn"): "Uvicorn",
+    ("traefik", "traefik"): "Traefik",
+    ("envoyproxy", "envoy"): "Envoy",
+    ("php", "php"): "PHP",
+    ("python", "python"): "Python",
+    ("nodejs", "node.js"): "Node.js",
+    ("ruby-lang", "ruby"): "Ruby",
+    ("perl", "perl"): "Perl",
+    ("golang", "go"): "Go",
+    ("oracle", "mysql"): "MySQL",
+    ("mariadb", "mariadb"): "MariaDB",
+    ("postgresql", "postgresql"): "PostgreSQL",
+    ("mongodb", "mongodb"): "MongoDB",
+    ("redis", "redis"): "Redis",
+    ("elastic", "elasticsearch"): "Elasticsearch",
+    ("apache", "couchdb"): "CouchDB",
+    ("memcached", "memcached"): "Memcached",
+    ("wordpress", "wordpress"): "WordPress",
+    ("drupal", "drupal"): "Drupal",
+    ("joomla", "joomla"): "Joomla",
+    ("djangoproject", "django"): "Django",
+    ("laravel", "laravel"): "Laravel",
+    ("vmware", "spring_framework"): "Spring",
+    ("palletsprojects", "flask"): "Flask",
+    ("expressjs", "express"): "Express",
+    ("rubyonrails", "rails"): "Rails",
+    ("jquery", "jquery"): "jQuery",
+    ("angular", "angular"): "Angular",
+    ("facebook", "react"): "React",
+    ("vuejs", "vue.js"): "Vue.js",
+    ("getbootstrap", "bootstrap"): "Bootstrap",
+    ("vercel", "next.js"): "Next.js",
+    ("grafana", "grafana"): "Grafana",
+    ("jenkins", "jenkins"): "Jenkins",
+    ("gitlab", "gitlab"): "GitLab",
+    ("sonarsource", "sonarqube"): "SonarQube",
+    ("sonatype", "nexus_repository_manager"): "Nexus",
+    ("vmware", "rabbitmq"): "RabbitMQ",
+    ("apache", "kafka"): "Kafka",
+    ("apache", "zookeeper"): "ZooKeeper",
+    ("eclipse", "jetty"): "Jetty",
+    ("redhat", "wildfly"): "WildFly",
+    ("phusion", "passenger"): "Passenger",
+    ("phpmyadmin", "phpmyadmin"): "phpMyAdmin",
+    ("webmin", "webmin"): "Webmin",
+    ("roundcube", "webmail"): "Roundcube",
+    ("minio", "minio"): "MinIO",
+    ("squid-cache", "squid"): "Squid",
+    ("haproxy", "haproxy"): "HAProxy",
+    ("varnish-software", "varnish_cache"): "Varnish",
+}
+
+# Protocol-level CPEs to skip (not actual products)
+_CPE_SKIP_LIST = {
+    ("ietf", "secure_shell_protocol"),
+}
+
+# Lazy-loaded Wappalyzer reverse CPE cache
+_WAPPALYZER_REVERSE_CPE = None
+
+
+def _parse_cpe_string(cpe: str):
+    """
+    Parse a CPE string (2.2 or 2.3 format) into structured components.
+
+    CPE 2.2: cpe:/a:apache:http_server:2.4.49
+    CPE 2.3: cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*
+
+    Returns dict {part, vendor, product, version} or None.
+    """
+    if not cpe:
+        return None
+
+    if cpe.startswith("cpe:2.3:"):
+        # CPE 2.3: cpe:2.3:part:vendor:product:version:...
+        parts = cpe.split(":")
+        if len(parts) >= 6:
+            version = parts[5] if parts[5] not in ("*", "-", "") else None
+            return {
+                "part": parts[2],
+                "vendor": parts[3],
+                "product": parts[4],
+                "version": version,
+            }
+    elif cpe.startswith("cpe:/"):
+        # CPE 2.2: cpe:/part:vendor:product:version
+        body = cpe[5:]  # strip "cpe:/"
+        parts = body.split(":")
+        if len(parts) >= 3:
+            version = parts[3] if len(parts) > 3 and parts[3] else None
+            return {
+                "part": parts[0],
+                "vendor": parts[1],
+                "product": parts[2],
+                "version": version,
+            }
+
+    return None
+
+
+def _load_wappalyzer_reverse_cpe():
+    """
+    Lazy-load the Wappalyzer technology cache and build a reverse CPE lookup.
+
+    Returns dict mapping (vendor, product) -> technology display name.
+    """
+    global _WAPPALYZER_REVERSE_CPE
+    if _WAPPALYZER_REVERSE_CPE is not None:
+        return _WAPPALYZER_REVERSE_CPE
+
+    _WAPPALYZER_REVERSE_CPE = {}
+    # Try multiple paths (works from different execution contexts)
+    candidates = [
+        Path(__file__).parent.parent / "recon" / "data" / "wappalyzer_cache" / "technologies.json",
+        Path(__file__).parent.parent.parent / "recon" / "data" / "wappalyzer_cache" / "technologies.json",
+    ]
+    for cache_path in candidates:
+        if cache_path.exists():
+            try:
+                with open(cache_path) as f:
+                    data = json.load(f)
+                for name, info in data.get("technologies", {}).items():
+                    cpe = info.get("cpe", "")
+                    if not cpe:
+                        continue
+                    parsed = _parse_cpe_string(cpe)
+                    if parsed:
+                        key = (parsed["vendor"], parsed["product"])
+                        # First match wins (don't overwrite)
+                        _WAPPALYZER_REVERSE_CPE.setdefault(key, name)
+                print(f"[+] Loaded Wappalyzer reverse CPE cache: {len(_WAPPALYZER_REVERSE_CPE)} entries")
+                break
+            except Exception as e:
+                print(f"[!] Failed to load Wappalyzer cache from {cache_path}: {e}")
+
+    return _WAPPALYZER_REVERSE_CPE
+
+
+def _resolve_cpe_to_display_name(vendor: str, product: str) -> str:
+    """
+    Resolve a CPE (vendor, product) pair to a Technology display name
+    that matches httpx/Wappalyzer naming conventions.
+
+    Resolution order:
+    1. Wappalyzer reverse CPE lookup (exact match)
+    2. _GVM_DISPLAY_NAMES (curated non-HTTP technologies)
+    3. _REVERSE_CPE_MAPPINGS (from CPE_MAPPINGS in cve_helpers.py)
+    4. Humanized CPE product name (replace underscores, title-case)
+    """
+    key = (vendor, product)
+
+    # 1. Wappalyzer reverse CPE (best match for recon name consistency)
+    wap_cache = _load_wappalyzer_reverse_cpe()
+    if key in wap_cache:
+        return wap_cache[key]
+
+    # 2. Curated GVM display names (non-HTTP technologies)
+    if key in _GVM_DISPLAY_NAMES:
+        return _GVM_DISPLAY_NAMES[key]
+
+    # 3. Reverse CPE mappings (from cve_helpers)
+    if key in _REVERSE_CPE_MAPPINGS:
+        return _REVERSE_CPE_MAPPINGS[key]
+
+    # 4. Humanized fallback: replace underscores, title-case
+    return product.replace("_", " ").title()
 
 
 def _is_ip_address(host: str) -> bool:
@@ -159,6 +373,126 @@ class Neo4jClient:
                 stats["nodes_deleted"] = record["deleted_count"]
 
             print(f"[*] Cleared project data: {stats['nodes_deleted']} nodes deleted")
+
+        return stats
+
+    def clear_gvm_data(self, user_id: str, project_id: str) -> dict:
+        """
+        Delete only GVM-specific nodes and relationships for a project.
+
+        Preserves all recon data (Domain, Subdomain, IP, Port, BaseURL,
+        Endpoint, Parameter, Service, etc.). Only removes:
+        - Vulnerability nodes with source='gvm'
+        - GVM-only CVE nodes (not shared with recon)
+        - GVM-only Technology nodes (detected_by='gvm')
+        - GVM enrichments on shared Technology nodes (CPE data)
+        - USES_TECHNOLOGY relationships with detected_by='gvm'
+        - Domain node GVM metadata properties
+
+        Args:
+            user_id: User identifier
+            project_id: Project identifier
+
+        Returns:
+            dict with counts of deleted/cleaned items
+        """
+        stats = {
+            "vulnerabilities_deleted": 0,
+            "cves_deleted": 0,
+            "technologies_deleted": 0,
+            "technologies_cleaned": 0,
+            "relationships_deleted": 0,
+        }
+
+        with self.driver.session() as session:
+            # 1. Delete GVM Vulnerability nodes (and all their relationships)
+            result = session.run(
+                """
+                MATCH (v:Vulnerability {user_id: $uid, project_id: $pid})
+                WHERE v.source = 'gvm'
+                DETACH DELETE v
+                RETURN count(v) as deleted
+                """,
+                uid=user_id, pid=project_id
+            )
+            record = result.single()
+            if record:
+                stats["vulnerabilities_deleted"] = record["deleted"]
+
+            # 2. Delete GVM-only CVE nodes (not linked to any non-GVM vulnerability)
+            result = session.run(
+                """
+                MATCH (c:CVE {user_id: $uid, project_id: $pid, source: 'gvm'})
+                WHERE NOT EXISTS {
+                    MATCH (v:Vulnerability)-[:HAS_CVE]->(c)
+                    WHERE v.source <> 'gvm'
+                }
+                DETACH DELETE c
+                RETURN count(c) as deleted
+                """,
+                uid=user_id, pid=project_id
+            )
+            record = result.single()
+            if record:
+                stats["cves_deleted"] = record["deleted"]
+
+            # 3. Delete GVM-only Technology nodes (detected_by exactly 'gvm')
+            result = session.run(
+                """
+                MATCH (t:Technology {user_id: $uid, project_id: $pid})
+                WHERE t.detected_by = 'gvm'
+                DETACH DELETE t
+                RETURN count(t) as deleted
+                """,
+                uid=user_id, pid=project_id
+            )
+            record = result.single()
+            if record:
+                stats["technologies_deleted"] = record["deleted"]
+
+            # 4. Clean shared Technology nodes (strip GVM enrichment)
+            result = session.run(
+                """
+                MATCH (t:Technology {user_id: $uid, project_id: $pid})
+                WHERE t.detected_by CONTAINS ',gvm'
+                SET t.detected_by = replace(t.detected_by, ',gvm', ''),
+                    t.cpe = null, t.cpe_vendor = null, t.cpe_product = null
+                RETURN count(t) as cleaned
+                """,
+                uid=user_id, pid=project_id
+            )
+            record = result.single()
+            if record:
+                stats["technologies_cleaned"] = record["cleaned"]
+
+            # 5. Delete GVM USES_TECHNOLOGY relationships (Port→Tech and IP→Tech)
+            result = session.run(
+                """
+                MATCH ()-[r:USES_TECHNOLOGY]->()
+                WHERE r.detected_by = 'gvm'
+                DELETE r
+                RETURN count(r) as deleted
+                """,
+            )
+            record = result.single()
+            if record:
+                stats["relationships_deleted"] = record["deleted"]
+
+            # 6. Clear Domain node GVM metadata properties
+            session.run(
+                """
+                MATCH (d:Domain {user_id: $uid, project_id: $pid})
+                WHERE d.gvm_scan_timestamp IS NOT NULL
+                REMOVE d.gvm_scan_timestamp, d.gvm_total_vulnerabilities,
+                       d.gvm_critical, d.gvm_high, d.gvm_medium, d.gvm_low
+                """,
+                uid=user_id, pid=project_id
+            )
+
+            total = (stats["vulnerabilities_deleted"] + stats["cves_deleted"] +
+                     stats["technologies_deleted"] + stats["relationships_deleted"])
+            print(f"[*] Cleared GVM data: {total} items removed, "
+                  f"{stats['technologies_cleaned']} shared technologies cleaned")
 
         return stats
 
@@ -2438,19 +2772,293 @@ class Neo4jClient:
 
         return stats
 
+    def _extract_gvm_technologies(self, raw_data: dict, scan: dict) -> list:
+        """
+        Extract technology detections from GVM host details.
+
+        Parses 'App', 'OS', 'OS-Detection', and 'best_os_cpe' entries from
+        raw_data.report.host.detail, resolves CPE strings to display names,
+        and maps CPEs to ports.
+
+        Returns list of dicts with keys: name, version, cpe, cpe_vendor,
+        cpe_product, port, protocol, categories, target_ip.
+        """
+        technologies = []
+
+        report = raw_data.get("report", {})
+        host_data = report.get("host", {})
+
+        # Handle both single host (dict) and multiple hosts (list)
+        hosts = [host_data] if isinstance(host_data, dict) else (
+            host_data if isinstance(host_data, list) else []
+        )
+
+        for host in hosts:
+            host_ip = host.get("ip", "") or scan.get("target_ip", "")
+            details = host.get("detail", [])
+            if isinstance(details, dict):
+                details = [details]
+            if not details:
+                continue
+
+            # Pass 1: Build CPE-to-port map
+            cpe_port_map = {}
+            for detail in details:
+                name = detail.get("name", "")
+                value = detail.get("value", "")
+                if name.startswith("cpe:/") or name.startswith("cpe:2.3:"):
+                    cpe_port_map[name] = value
+
+            # Pass 2: Extract App and OS CPE entries
+            seen_cpes = set()
+            capture_names = {"App", "OS", "OS-Detection", "best_os_cpe"}
+
+            for detail in details:
+                name = detail.get("name", "")
+                value = detail.get("value", "")
+
+                if name not in capture_names:
+                    continue
+                if not value.startswith("cpe:/") and not value.startswith("cpe:2.3:"):
+                    continue
+                if value in seen_cpes:
+                    continue
+                seen_cpes.add(value)
+
+                parsed = _parse_cpe_string(value)
+                if not parsed:
+                    continue
+
+                vendor = parsed["vendor"]
+                product = parsed["product"]
+                cpe_version = parsed["version"]
+                part = parsed["part"]  # "a" for app, "o" for OS
+
+                # Skip protocol-level CPEs
+                if (vendor, product) in _CPE_SKIP_LIST:
+                    continue
+
+                # Resolve to display name
+                display_name = _resolve_cpe_to_display_name(vendor, product)
+
+                # Look up port from CPE-to-port map
+                port_str = cpe_port_map.get(value, "")
+                port_number = None
+                port_protocol = None
+                if "/" in port_str:
+                    port_part, proto_part = port_str.split("/", 1)
+                    if port_part.isdigit():
+                        port_number = int(port_part)
+                        port_protocol = proto_part
+
+                # Categorize
+                categories = ["Operating systems"] if part == "o" else []
+
+                technologies.append({
+                    "name": display_name,
+                    "version": cpe_version,
+                    "cpe": value,
+                    "cpe_vendor": vendor,
+                    "cpe_product": product,
+                    "port": port_number,
+                    "protocol": port_protocol,
+                    "categories": categories,
+                    "target_ip": host_ip,
+                })
+
+        return technologies
+
+    def _merge_gvm_technology(self, session, tech: dict, user_id: str, project_id: str, stats: dict):
+        """
+        Merge a GVM-detected technology into the graph.
+
+        Uses the same MERGE key as the recon pipeline ({name, version} or {name})
+        to avoid duplicates. Enriches existing nodes with CPE data.
+
+        Port-specific technologies (e.g. Apache on 8080, OpenSSH on 22):
+            Port -[:USES_TECHNOLOGY {detected_by: 'gvm'}]-> Technology
+        OS / general technologies (e.g. Ubuntu, Linux — no specific port):
+            IP -[:USES_TECHNOLOGY {detected_by: 'gvm'}]-> Technology
+        """
+        name = tech["name"]
+        version = tech["version"]
+        cpe = tech["cpe"]
+        target_ip = tech["target_ip"]
+        port = tech.get("port")          # int or None
+        protocol = tech.get("protocol")  # str or None
+
+        tech_props = {
+            "name": name,
+            "user_id": user_id,
+            "project_id": project_id,
+            "cpe": cpe,
+            "cpe_vendor": tech.get("cpe_vendor"),
+            "cpe_product": tech.get("cpe_product"),
+        }
+        if tech.get("categories"):
+            tech_props["categories"] = tech["categories"]
+
+        # Remove None values
+        tech_props = {k: v for k, v in tech_props.items() if v is not None}
+
+        # Step 1: MERGE the Technology node (same logic as before)
+        if version:
+            session.run(
+                """
+                MERGE (t:Technology {name: $name, version: $version})
+                ON CREATE SET t += $props,
+                              t.detected_by = 'gvm',
+                              t.confidence = 100,
+                              t.updated_at = datetime()
+                ON MATCH SET  t.cpe = $cpe,
+                              t.cpe_vendor = $cpe_vendor,
+                              t.cpe_product = $cpe_product,
+                              t.detected_by = CASE
+                                  WHEN t.detected_by IS NULL THEN 'gvm'
+                                  WHEN t.detected_by CONTAINS 'gvm' THEN t.detected_by
+                                  ELSE t.detected_by + ',gvm'
+                              END,
+                              t.updated_at = datetime()
+                """,
+                name=name, version=version, props=tech_props,
+                cpe=cpe,
+                cpe_vendor=tech.get("cpe_vendor"),
+                cpe_product=tech.get("cpe_product"),
+            )
+        else:
+            session.run(
+                """
+                MERGE (t:Technology {name: $name})
+                ON CREATE SET t += $props,
+                              t.detected_by = 'gvm',
+                              t.confidence = 100,
+                              t.updated_at = datetime()
+                ON MATCH SET  t.cpe = COALESCE($cpe, t.cpe),
+                              t.cpe_vendor = COALESCE($cpe_vendor, t.cpe_vendor),
+                              t.cpe_product = COALESCE($cpe_product, t.cpe_product),
+                              t.detected_by = CASE
+                                  WHEN t.detected_by IS NULL THEN 'gvm'
+                                  WHEN t.detected_by CONTAINS 'gvm' THEN t.detected_by
+                                  ELSE t.detected_by + ',gvm'
+                              END,
+                              t.updated_at = datetime()
+                """,
+                name=name, props=tech_props,
+                cpe=cpe,
+                cpe_vendor=tech.get("cpe_vendor"),
+                cpe_product=tech.get("cpe_product"),
+            )
+        stats["technologies_created"] += 1
+
+        # Step 2: Create relationship based on whether we have a port
+        if not target_ip:
+            return
+
+        is_os = "Operating systems" in (tech.get("categories") or [])
+
+        if port is not None and not is_os:
+            # PORT-SPECIFIC technology: chain through Port node
+            effective_protocol = protocol or "tcp"
+
+            # MERGE Port node (may already exist from recon port_scan)
+            session.run(
+                """
+                MERGE (p:Port {number: $port_number, protocol: $protocol, ip_address: $ip_addr})
+                SET p.user_id = $user_id,
+                    p.project_id = $project_id,
+                    p.state = 'open',
+                    p.updated_at = datetime()
+                """,
+                port_number=port, protocol=effective_protocol, ip_addr=target_ip,
+                user_id=user_id, project_id=project_id,
+            )
+            stats["ports_created"] += 1
+
+            # MERGE IP -[:HAS_PORT]-> Port (in case recon didn't create it)
+            session.run(
+                """
+                MATCH (i:IP {address: $ip, user_id: $user_id, project_id: $project_id})
+                MATCH (p:Port {number: $port_number, protocol: $protocol, ip_address: $ip})
+                MERGE (i)-[:HAS_PORT]->(p)
+                """,
+                ip=target_ip, user_id=user_id, project_id=project_id,
+                port_number=port, protocol=effective_protocol,
+            )
+
+            # MERGE Port -[:USES_TECHNOLOGY]-> Technology
+            if version:
+                session.run(
+                    """
+                    MATCH (p:Port {number: $port_number, protocol: $protocol, ip_address: $ip})
+                    MATCH (t:Technology {name: $name, version: $version})
+                    MERGE (p)-[r:USES_TECHNOLOGY]->(t)
+                    SET r.detected_by = 'gvm'
+                    """,
+                    port_number=port, protocol=effective_protocol, ip=target_ip,
+                    name=name, version=version,
+                )
+            else:
+                session.run(
+                    """
+                    MATCH (p:Port {number: $port_number, protocol: $protocol, ip_address: $ip})
+                    MATCH (t:Technology {name: $name})
+                    WHERE t.version IS NULL
+                    MERGE (p)-[r:USES_TECHNOLOGY]->(t)
+                    SET r.detected_by = 'gvm'
+                    """,
+                    port_number=port, protocol=effective_protocol, ip=target_ip,
+                    name=name,
+                )
+            stats["relationships_created"] += 1
+        else:
+            # OS / GENERAL technology (no port, or OS category): link to IP directly
+            rel_props = {"detected_by": "gvm"}
+
+            if version:
+                session.run(
+                    """
+                    MATCH (i:IP {address: $ip, user_id: $user_id, project_id: $project_id})
+                    MATCH (t:Technology {name: $name, version: $version})
+                    MERGE (i)-[r:USES_TECHNOLOGY]->(t)
+                    SET r += $rel_props
+                    """,
+                    ip=target_ip, user_id=user_id, project_id=project_id,
+                    name=name, version=version, rel_props=rel_props,
+                )
+            else:
+                session.run(
+                    """
+                    MATCH (i:IP {address: $ip, user_id: $user_id, project_id: $project_id})
+                    MATCH (t:Technology {name: $name})
+                    WHERE t.version IS NULL
+                    MERGE (i)-[r:USES_TECHNOLOGY]->(t)
+                    SET r += $rel_props
+                    """,
+                    ip=target_ip, user_id=user_id, project_id=project_id,
+                    name=name, rel_props=rel_props,
+                )
+            stats["relationships_created"] += 1
+
     def update_graph_from_gvm_scan(self, gvm_data: dict, user_id: str, project_id: str) -> dict:
         """
         Update the Neo4j graph database with GVM/OpenVAS vulnerability scan data.
 
         This function creates/updates:
+        - Technology nodes (from GVM product/service/OS detections via CPE)
+        - Port nodes (MERGE'd for port-specific technologies)
         - Vulnerability nodes (from GVM findings with source="gvm")
         - CVE nodes (extracted from GVM findings)
-        - MitreData (CWE) nodes linked to CVEs
-        - Capec nodes linked to CWEs
-        - Relationships: IP -[:HAS_VULNERABILITY]-> Vulnerability
-        - Relationships: Subdomain -[:HAS_VULNERABILITY]-> Vulnerability
-        - Relationships: Vulnerability -[:HAS_CVE]-> CVE
-        - Relationships: CVE -[:HAS_CWE]-> MitreData -[:HAS_CAPEC]-> Capec
+
+        Relationships (preferred chain):
+        - Port -[:USES_TECHNOLOGY {detected_by: 'gvm'}]-> Technology
+        - Technology -[:HAS_VULNERABILITY]-> Vulnerability
+        - Vulnerability -[:HAS_CVE]-> CVE
+
+        Fallback relationships:
+        - IP -[:USES_TECHNOLOGY]-> Technology (for OS-level tech with no port)
+        - Port -[:HAS_VULNERABILITY]-> Vulnerability (port with no tech detected)
+        - IP -[:HAS_VULNERABILITY]-> Vulnerability (no port, no tech)
+        - Subdomain -[:HAS_VULNERABILITY]-> Vulnerability (always, for subdomain context)
 
         Args:
             gvm_data: The GVM scan JSON data
@@ -2465,8 +3073,11 @@ class Neo4jClient:
             "cves_linked": 0,
             "ips_linked": 0,
             "subdomains_linked": 0,
+            "technologies_linked": 0,
+            "ports_created": 0,
             "mitre_nodes": 0,
             "capec_nodes": 0,
+            "technologies_created": 0,
             "relationships_created": 0,
             "errors": []
         }
@@ -2487,6 +3098,16 @@ class Neo4jClient:
 
             # Process each scan
             for scan in scans:
+                # Extract and merge technology detections FIRST
+                # (so vulnerability linking can find Technology nodes)
+                raw_data = scan.get("raw_data", {})
+                gvm_technologies = self._extract_gvm_technologies(raw_data, scan)
+                for tech in gvm_technologies:
+                    try:
+                        self._merge_gvm_technology(session, tech, user_id, project_id, stats)
+                    except Exception as e:
+                        stats["errors"].append(f"GVM technology {tech.get('name')} failed: {e}")
+
                 vulnerabilities = scan.get("vulnerabilities", [])
 
                 for vuln in vulnerabilities:
@@ -2585,8 +3206,68 @@ class Neo4jClient:
                         )
                         stats["vulnerabilities_created"] += 1
 
-                        # Link to IP node
-                        if target_ip:
+                        # Link Vulnerability to Technology (preferred) or fallback
+                        vuln_linked = False
+
+                        if target_ip and target_port is not None:
+                            # TIER 1: Link via Technology on the same Port
+                            effective_protocol = port_protocol or "tcp"
+                            result = session.run(
+                                """
+                                MATCH (p:Port {number: $port, protocol: $protocol, ip_address: $ip})
+                                      -[:USES_TECHNOLOGY]->(t:Technology)
+                                MATCH (v:Vulnerability {id: $vuln_id})
+                                MERGE (t)-[:HAS_VULNERABILITY]->(v)
+                                RETURN count(t) as matched
+                                """,
+                                port=target_port, protocol=effective_protocol,
+                                ip=target_ip, vuln_id=vuln_id,
+                            )
+                            record = result.single()
+                            if record and record["matched"] > 0:
+                                stats["technologies_linked"] += record["matched"]
+                                stats["relationships_created"] += record["matched"]
+                                vuln_linked = True
+
+                        if target_ip and not vuln_linked and target_port is None:
+                            # TIER 2: "general/tcp" vuln — link to OS Technology on IP
+                            result = session.run(
+                                """
+                                MATCH (i:IP {address: $ip, user_id: $user_id, project_id: $project_id})
+                                      -[:USES_TECHNOLOGY]->(t:Technology)
+                                WHERE 'Operating systems' IN t.categories
+                                MATCH (v:Vulnerability {id: $vuln_id})
+                                MERGE (t)-[:HAS_VULNERABILITY]->(v)
+                                RETURN count(t) as matched
+                                """,
+                                ip=target_ip, user_id=user_id, project_id=project_id,
+                                vuln_id=vuln_id,
+                            )
+                            record = result.single()
+                            if record and record["matched"] > 0:
+                                stats["technologies_linked"] += record["matched"]
+                                stats["relationships_created"] += record["matched"]
+                                vuln_linked = True
+
+                        if target_ip and not vuln_linked and target_port is not None:
+                            # TIER 3: Port exists but no Technology — link to Port
+                            effective_protocol = port_protocol or "tcp"
+                            result = session.run(
+                                """
+                                MATCH (p:Port {number: $port, protocol: $protocol, ip_address: $ip})
+                                MATCH (v:Vulnerability {id: $vuln_id})
+                                MERGE (p)-[:HAS_VULNERABILITY]->(v)
+                                RETURN p
+                                """,
+                                port=target_port, protocol=effective_protocol,
+                                ip=target_ip, vuln_id=vuln_id,
+                            )
+                            if result.single():
+                                stats["relationships_created"] += 1
+                                vuln_linked = True
+
+                        if target_ip and not vuln_linked:
+                            # TIER 4 (FALLBACK): No Technology, no Port — link to IP
                             result = session.run(
                                 """
                                 MATCH (i:IP {address: $ip, user_id: $user_id, project_id: $project_id})
@@ -2594,7 +3275,8 @@ class Neo4jClient:
                                 MERGE (i)-[:HAS_VULNERABILITY]->(v)
                                 RETURN i
                                 """,
-                                ip=target_ip, user_id=user_id, project_id=project_id, vuln_id=vuln_id
+                                ip=target_ip, user_id=user_id, project_id=project_id,
+                                vuln_id=vuln_id,
                             )
                             if result.single():
                                 stats["ips_linked"] += 1
@@ -2675,9 +3357,12 @@ class Neo4jClient:
                 except Exception as e:
                     stats["errors"].append(f"Domain update failed: {e}")
 
+            print(f"[+] Created/enriched {stats['technologies_created']} Technology nodes from GVM")
+            print(f"[+] Created {stats['ports_created']} Port nodes from GVM")
             print(f"[+] Created {stats['vulnerabilities_created']} GVM Vulnerability nodes")
+            print(f"[+] Linked {stats['technologies_linked']} vulnerabilities to technologies")
             print(f"[+] Linked {stats['cves_linked']} CVEs")
-            print(f"[+] Linked {stats['ips_linked']} IPs")
+            print(f"[+] Linked {stats['ips_linked']} IPs (fallback)")
             print(f"[+] Linked {stats['subdomains_linked']} Subdomains")
             print(f"[+] Created {stats['relationships_created']} relationships")
 

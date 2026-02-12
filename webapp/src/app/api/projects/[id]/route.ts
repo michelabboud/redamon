@@ -5,9 +5,10 @@ import { existsSync } from 'fs'
 import path from 'path'
 import { getSession } from '@/app/api/graph/neo4j'
 
-// Path to recon and gvm output directories (fallback for local deletion)
+// Path to output directories (fallback for local deletion)
 const RECON_OUTPUT_PATH = process.env.RECON_OUTPUT_PATH || '/home/samuele/Progetti didattici/RedAmon/recon/output'
 const GVM_OUTPUT_PATH = process.env.GVM_OUTPUT_PATH || '/home/samuele/Progetti didattici/RedAmon/gvm_scan/output'
+const GITHUB_HUNT_OUTPUT_PATH = process.env.GITHUB_HUNT_OUTPUT_PATH || '/home/samuele/Progetti didattici/RedAmon/github_secret_hunt/output'
 
 // Recon orchestrator URL for file deletion
 const RECON_ORCHESTRATOR_URL = process.env.RECON_ORCHESTRATOR_URL || 'http://localhost:8010'
@@ -93,9 +94,10 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       where: { id }
     })
 
-    // 2. Delete recon JSON file via orchestrator (it has write permissions)
+    // 2. Delete all output JSON files via orchestrator (it has write permissions)
+    //    This covers: recon, GVM, and GitHub Secret Hunt JSON files
     try {
-      const orchestratorResponse = await fetch(`${RECON_ORCHESTRATOR_URL}/recon/${id}/data`, {
+      const orchestratorResponse = await fetch(`${RECON_ORCHESTRATOR_URL}/project/${id}/files`, {
         method: 'DELETE',
       })
       if (orchestratorResponse.ok) {
@@ -107,30 +109,25 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     } catch (orchestratorError) {
       console.warn(`Failed to call orchestrator for file deletion: ${orchestratorError}`)
 
-      // Fallback: try to delete locally (may fail due to permissions)
-      const reconFilePath = path.join(RECON_OUTPUT_PATH, `recon_${id}.json`)
-      if (existsSync(reconFilePath)) {
-        try {
-          await unlink(reconFilePath)
-          console.log(`Deleted recon file locally: ${reconFilePath}`)
-        } catch (err) {
-          console.warn(`Failed to delete recon file locally: ${err}`)
+      // Fallback: try to delete locally (may fail in Docker due to read-only mounts)
+      const filesToDelete = [
+        { path: path.join(RECON_OUTPUT_PATH, `recon_${id}.json`), name: 'recon' },
+        { path: path.join(GVM_OUTPUT_PATH, `gvm_${id}.json`), name: 'GVM' },
+        { path: path.join(GITHUB_HUNT_OUTPUT_PATH, `github_hunt_${id}.json`), name: 'GitHub hunt' },
+      ]
+      for (const file of filesToDelete) {
+        if (existsSync(file.path)) {
+          try {
+            await unlink(file.path)
+            console.log(`Deleted ${file.name} file locally: ${file.path}`)
+          } catch (err) {
+            console.warn(`Failed to delete ${file.name} file locally: ${err}`)
+          }
         }
       }
     }
 
-    // 3. Delete GVM JSON file if it exists
-    const gvmFilePath = path.join(GVM_OUTPUT_PATH, `gvm_${id}.json`)
-    if (existsSync(gvmFilePath)) {
-      try {
-        await unlink(gvmFilePath)
-        console.log(`Deleted GVM file: ${gvmFilePath}`)
-      } catch (err) {
-        console.warn(`Failed to delete GVM file: ${err}`)
-      }
-    }
-
-    // 4. Delete all Neo4j nodes for this project
+    // 3. Delete all Neo4j nodes for this project
     try {
       const session = getSession()
       try {

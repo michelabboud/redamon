@@ -99,7 +99,7 @@ export function ReconLogsDrawer({
   }
 
   return (
-    <div className={`${styles.drawer} ${isOpen ? styles.drawerOpen : ''}`}>
+    <div className={styles.drawer}>
       {/* Header */}
       <div className={styles.header}>
         <div className={styles.titleContainer}>

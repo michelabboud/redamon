@@ -520,6 +520,12 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
         print(f"    [*] Scan type: {'SYN' if NAABU_SCAN_TYPE == 's' else 'CONNECT'}")
         print(f"    [*] Ports: {NAABU_CUSTOM_PORTS if NAABU_CUSTOM_PORTS else f'top {NAABU_TOP_PORTS}'}")
         print(f"    [*] Rate limit: {NAABU_RATE_LIMIT} pps")
+        print(f"    [*] Threads: {settings.get('NAABU_THREADS', 25)}")
+        print(f"    [*] Timeout: {settings.get('NAABU_TIMEOUT', 10000)}ms")
+        print(f"    [*] Retries: {settings.get('NAABU_RETRIES', 1)}")
+        print(f"    [*] Exclude CDN: {NAABU_EXCLUDE_CDN}")
+        print(f"    [*] Skip host discovery: {settings.get('NAABU_SKIP_HOST_DISCOVERY', True)}")
+        print(f"    [*] Verify ports: {settings.get('NAABU_VERIFY_PORTS', True)}")
 
         if NAABU_PASSIVE_MODE:
             print(f"    [*] Mode: PASSIVE (Shodan InternetDB)")

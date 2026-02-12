@@ -217,6 +217,13 @@ services:
     image: redamon-vuln-scanner:latest
     profiles: ["tools"]
 
+  github-secret-hunter:
+    build:
+      context: .
+      dockerfile: github_secret_hunt/Dockerfile
+    image: redamon-github-hunter:latest
+    profiles: ["tools"]
+
   # ===========================================================================
   # Backend Services
   # ===========================================================================
@@ -233,11 +240,15 @@ services:
       - ./recon/output:/app/recon/output:rw
       - ./gvm_scan:/app/gvm_scan:ro
       - ./gvm_scan/output:/app/gvm_scan/output:rw
+      - ./github_secret_hunt:/app/github_secret_hunt:ro
+      - ./github_secret_hunt/output:/app/github_secret_hunt/output:rw
     environment:
       RECON_PATH: ${PWD}/recon
       RECON_IMAGE: redamon-recon:latest
       GVM_SCAN_PATH: ${PWD}/gvm_scan
       GVM_IMAGE: redamon-vuln-scanner:latest
+      GITHUB_HUNT_PATH: ${PWD}/github_secret_hunt
+      GITHUB_HUNT_IMAGE: redamon-github-hunter:latest
       # Forwarded to spawned recon containers (host network, so localhost)
       NVD_API_KEY: ${NVD_API_KEY:-}
       NEO4J_URI: bolt://localhost:7687
@@ -374,9 +385,11 @@ services:
       # Output paths (must match volume mounts below)
       RECON_OUTPUT_PATH: /data/recon-output
       GVM_OUTPUT_PATH: /data/gvm-output
+      GITHUB_HUNT_OUTPUT_PATH: /data/github-hunt-output
     volumes:
       - ./recon/output:/data/recon-output:ro
       - ./gvm_scan/output:/data/gvm-output:ro
+      - ./github_secret_hunt/output:/data/github-hunt-output:ro
     depends_on:
       postgres:
         condition: service_healthy

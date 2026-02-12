@@ -24,6 +24,10 @@ from models import (
     GvmStartRequest,
     GvmState,
     GvmStatus,
+    GithubHuntLogEvent,
+    GithubHuntStartRequest,
+    GithubHuntState,
+    GithubHuntStatus,
 )
 
 # Configure logging
@@ -38,6 +42,8 @@ RECON_PATH = os.getenv("RECON_PATH", "/home/samuele/Progetti didattici/RedAmon/r
 RECON_IMAGE = os.getenv("RECON_IMAGE", "redamon-recon:latest")
 GVM_SCAN_PATH = os.getenv("GVM_SCAN_PATH", "/home/samuele/Progetti didattici/RedAmon/gvm_scan")
 GVM_IMAGE = os.getenv("GVM_IMAGE", "redamon-vuln-scanner:latest")
+GITHUB_HUNT_PATH = os.getenv("GITHUB_HUNT_PATH", "/home/samuele/Progetti didattici/RedAmon/github_secret_hunt")
+GITHUB_HUNT_IMAGE = os.getenv("GITHUB_HUNT_IMAGE", "redamon-github-hunter:latest")
 VERSION = "1.0.0"
 
 # Global container manager
@@ -49,7 +55,7 @@ async def lifespan(app: FastAPI):
     """Initialize and cleanup resources"""
     global container_manager
     logger.info("Starting Recon Orchestrator...")
-    container_manager = ContainerManager(recon_image=RECON_IMAGE, gvm_image=GVM_IMAGE)
+    container_manager = ContainerManager(recon_image=RECON_IMAGE, gvm_image=GVM_IMAGE, github_hunt_image=GITHUB_HUNT_IMAGE)
     yield
     logger.info("Shutting down Recon Orchestrator...")
     await container_manager.cleanup()
@@ -80,6 +86,7 @@ async def health_check():
         version=VERSION,
         running_recons=container_manager.get_running_count() if container_manager else 0,
         running_gvm_scans=container_manager.get_gvm_running_count() if container_manager else 0,
+        running_github_hunts=container_manager.get_github_hunt_running_count() if container_manager else 0,
     )
 
 
@@ -140,6 +147,24 @@ async def get_defaults():
             camel_case_defaults.update(gvm_defaults)
         except Exception:
             logger.warning("GVM project_settings not found, skipping GVM defaults")
+
+        # Also import GitHub Secret Hunt defaults
+        try:
+            import importlib.util
+            gh_settings_path = Path("/app/github_secret_hunt/project_settings.py")
+            spec = importlib.util.spec_from_file_location("github_hunt_project_settings", gh_settings_path)
+            gh_mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(gh_mod)
+
+            # Convert GITHUB_ACCESS_TOKEN → githubAccessToken (already github-prefixed)
+            def to_gh_camel(snake_str: str) -> str:
+                components = snake_str.lower().split('_')
+                return components[0] + ''.join(x.title() for x in components[1:])
+
+            gh_defaults = {to_gh_camel(k): v for k, v in gh_mod.DEFAULT_GITHUB_SETTINGS.items()}
+            camel_case_defaults.update(gh_defaults)
+        except Exception:
+            logger.warning("GitHub Hunt project_settings not found, skipping GitHub defaults")
 
         return camel_case_defaults
     except ImportError as e:
@@ -308,6 +333,47 @@ async def delete_recon_data(project_id: str):
     }
 
 
+@app.delete("/project/{project_id}/files")
+async def delete_project_files(project_id: str):
+    """
+    Delete all output files for a project (recon, GVM, GitHub hunt).
+
+    Called when a project is deleted to clean up all associated JSON files.
+    The orchestrator has write access to all output directories.
+    """
+    import os
+    from pathlib import Path
+
+    files_to_delete = [
+        Path("/app/recon/output") / f"recon_{project_id}.json",
+        Path("/app/gvm_scan/output") / f"gvm_{project_id}.json",
+        Path("/app/github_secret_hunt/output") / f"github_hunt_{project_id}.json",
+    ]
+
+    deleted_files = []
+    errors = []
+
+    for file_path in files_to_delete:
+        if file_path.exists():
+            try:
+                os.remove(file_path)
+                deleted_files.append(str(file_path))
+                logger.info(f"Deleted project file: {file_path}")
+            except Exception as e:
+                errors.append(f"Failed to delete {file_path}: {e}")
+                logger.error(f"Failed to delete project file {file_path}: {e}")
+
+    # Clean up any running state for this project
+    if container_manager and project_id in container_manager.running_states:
+        del container_manager.running_states[project_id]
+
+    return {
+        "success": len(errors) == 0,
+        "deleted": deleted_files,
+        "errors": errors,
+    }
+
+
 # =============================================================================
 # GVM Vulnerability Scan Endpoints
 # =============================================================================
@@ -401,6 +467,110 @@ async def stream_gvm_logs(project_id: str):
             }
 
         final_state = await container_manager.get_gvm_status(project_id)
+        yield {
+            "event": "complete",
+            "data": json.dumps({
+                "status": final_state.status.value,
+                "completedAt": final_state.completed_at.isoformat() if final_state.completed_at else None,
+                "error": final_state.error,
+            }),
+        }
+
+    return EventSourceResponse(event_generator())
+
+
+# =============================================================================
+# GitHub Secret Hunt Endpoints
+# =============================================================================
+
+
+@app.post("/github-hunt/{project_id}/start", response_model=GithubHuntState)
+async def start_github_hunt(project_id: str, request: GithubHuntStartRequest):
+    """
+    Start a GitHub Secret Hunt for a project.
+
+    Requires recon data to already exist for target context.
+    """
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    # Check that recon data exists
+    from pathlib import Path
+    recon_file = Path("/app/recon/output") / f"recon_{project_id}.json"
+    if not recon_file.exists():
+        raise HTTPException(
+            status_code=400,
+            detail="Recon data required. Run reconnaissance first.",
+        )
+
+    try:
+        state = await container_manager.start_github_hunt(
+            project_id=project_id,
+            user_id=request.user_id,
+            webapp_api_url=request.webapp_api_url,
+            github_hunt_path=GITHUB_HUNT_PATH,
+        )
+        return state
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error starting GitHub hunt: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/github-hunt/{project_id}/status", response_model=GithubHuntState)
+async def get_github_hunt_status(project_id: str):
+    """Get current status of a GitHub Secret Hunt process"""
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    return await container_manager.get_github_hunt_status(project_id)
+
+
+@app.post("/github-hunt/{project_id}/stop", response_model=GithubHuntState)
+async def stop_github_hunt(project_id: str):
+    """Stop a running GitHub Secret Hunt process"""
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    state = await container_manager.stop_github_hunt(project_id)
+    return state
+
+
+@app.get("/github-hunt/{project_id}/logs")
+async def stream_github_hunt_logs(project_id: str):
+    """
+    Stream logs from a GitHub Secret Hunt container using Server-Sent Events.
+    """
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    state = await container_manager.get_github_hunt_status(project_id)
+    if state.status == GithubHuntStatus.IDLE:
+        raise HTTPException(status_code=404, detail="No GitHub hunt found for this project")
+
+    async def event_generator():
+        try:
+            async for event in container_manager.stream_github_hunt_logs(project_id):
+                yield {
+                    "event": "log",
+                    "data": json.dumps({
+                        "log": event.log,
+                        "timestamp": event.timestamp.isoformat(),
+                        "phase": event.phase,
+                        "phaseNumber": event.phase_number,
+                        "isPhaseStart": event.is_phase_start,
+                        "level": event.level,
+                    }),
+                }
+        except Exception as e:
+            logger.error(f"Error streaming GitHub hunt logs: {e}")
+            yield {
+                "event": "error",
+                "data": json.dumps({"error": str(e)}),
+            }
+
+        final_state = await container_manager.get_github_hunt_status(project_id)
         yield {
             "event": "complete",
             "data": json.dumps({

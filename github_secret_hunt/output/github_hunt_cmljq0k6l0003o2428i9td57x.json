@@ -1,0 +1,376 @@
+{
+  "target": "samugit83",
+  "scan_start_time": "2026-02-12T21:37:27.084203",
+  "scan_end_time": null,
+  "status": "in_progress",
+  "last_update": "2026-02-12T21:45:04.525120",
+  "statistics": {
+    "repos_scanned": 8,
+    "files_scanned": 667,
+    "commits_scanned": 104,
+    "gists_scanned": 0,
+    "secrets_found": 6,
+    "sensitive_files": 4,
+    "high_entropy": 20
+  },
+  "findings": [
+    {
+      "timestamp": "2026-02-12T21:37:47.888619",
+      "type": "SENSITIVE_FILE",
+      "repository": "samugit83/ai-superagent",
+      "path": "jsconfig.json",
+      "secret_type": "Sensitive Filename",
+      "details": {}
+    },
+    {
+      "timestamp": "2026-02-12T21:37:54.304924",
+      "type": "SECRET",
+      "repository": "samugit83/ai-superagent",
+      "path": "package-lock.json",
+      "secret_type": "Twilio Account SID",
+      "details": {
+        "matches": 2,
+        "sample": "AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXSt"
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:37:54.361921",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/ai-superagent",
+      "path": "package-lock.json",
+      "secret_type": "High Entropy (5.5)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-1Yjs2SvM8TflER/OD3cOjhWWOZb58A2t7wpE2S9XfBY...",
+        "entropy": 5.5,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:37:54.362293",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/ai-superagent",
+      "path": "package-lock.json",
+      "secret_type": "High Entropy (5.42)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-qAZRvPzfdWHtfameEGP2Qvuf838NhergR35o+EuVyB5...",
+        "entropy": 5.42,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:37:54.362448",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/ai-superagent",
+      "path": "package-lock.json",
+      "secret_type": "High Entropy (5.54)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-HGlIQZzrEbAhpJR6+IGdzfbPym94Owr6JZkJ2QCCnOk...",
+        "entropy": 5.54,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:37:54.362594",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/ai-superagent",
+      "path": "package-lock.json",
+      "secret_type": "High Entropy (5.4)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-vHbT+zJEVzllwP+CM+ul7reTEfBR0vgxFe7+lREAsAA...",
+        "entropy": 5.4,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:37:54.362777",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/ai-superagent",
+      "path": "package-lock.json",
+      "secret_type": "High Entropy (5.46)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-Wj8onxL/T8KQLFFiCA4t8eIRGpRR+UPgOdac2sYzonv...",
+        "entropy": 5.46,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:37:59.038345",
+      "type": "SENSITIVE_FILE",
+      "repository": "samugit83/ai-superagent",
+      "path": "websocket_server/.env",
+      "secret_type": "Sensitive Filename",
+      "details": {}
+    },
+    {
+      "timestamp": "2026-02-12T21:38:56.971015",
+      "type": "SECRET",
+      "repository": "samugit83/AutoCodeAgent2.0",
+      "path": "tools/cua/engine.py",
+      "secret_type": "Redis URL",
+      "details": {
+        "matches": 1,
+        "sample": "redis://redi"
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:39:36.452615",
+      "type": "SECRET",
+      "repository": "samugit83/AutoCodeAgent2.0",
+      "path": "tools/cua/engine.py (commit: 8d6009d)",
+      "secret_type": "Redis URL",
+      "details": {
+        "matches": 1,
+        "sample": "redis://redi"
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:40:21.168716",
+      "type": "SENSITIVE_FILE",
+      "repository": "samugit83/aweform",
+      "path": ".vscode/settings.json",
+      "secret_type": "Sensitive Filename",
+      "details": {}
+    },
+    {
+      "timestamp": "2026-02-12T21:40:33.118333",
+      "type": "SECRET",
+      "repository": "samugit83/aweform",
+      "path": "package-lock.json",
+      "secret_type": "Twilio Account SID",
+      "details": {
+        "matches": 6,
+        "sample": "ACzhjhWXhCs13bO1S88LvPR5mBFXok3XOT"
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:40:33.184917",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/aweform",
+      "path": "package-lock.json",
+      "secret_type": "High Entropy (5.5)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-1Yjs2SvM8TflER/OD3cOjhWWOZb58A2t7wpE2S9XfBY...",
+        "entropy": 5.5,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:40:33.185461",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/aweform",
+      "path": "package-lock.json",
+      "secret_type": "High Entropy (5.51)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbk...",
+        "entropy": 5.51,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:40:33.185842",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/aweform",
+      "path": "package-lock.json",
+      "secret_type": "High Entropy (5.37)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-IzSgsrxUcsrejQbPVilIKy16kAT52EwB6zSaI+M3xxI...",
+        "entropy": 5.37,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:40:33.186183",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/aweform",
+      "path": "package-lock.json",
+      "secret_type": "High Entropy (5.64)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-Xni35NKzjgMrwevysHTCArtLDpPvye8zV/0E4EyYn43...",
+        "entropy": 5.64,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:40:33.186516",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/aweform",
+      "path": "package-lock.json",
+      "secret_type": "High Entropy (5.52)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-ENNPPManmnVJ4BTXlOjAgD7URidbAznURqD0KvfREyc...",
+        "entropy": 5.52,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:40:39.683726",
+      "type": "SENSITIVE_FILE",
+      "repository": "samugit83/aweform",
+      "path": "tsconfig.json",
+      "secret_type": "Sensitive Filename",
+      "details": {}
+    },
+    {
+      "timestamp": "2026-02-12T21:41:01.522852",
+      "type": "SECRET",
+      "repository": "samugit83/myGameofLife",
+      "path": "mygame_back/node_modules/.package-lock.json",
+      "secret_type": "Twilio Account SID",
+      "details": {
+        "matches": 1,
+        "sample": "AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXSt"
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:41:01.549549",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/myGameofLife",
+      "path": "mygame_back/node_modules/.package-lock.json",
+      "secret_type": "High Entropy (5.37)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-PYAthTa2m2VKxuvSD3DPC/Gy+U+sOA1LAuT8mkmRuvw...",
+        "entropy": 5.37,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:41:01.551472",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/myGameofLife",
+      "path": "mygame_back/node_modules/.package-lock.json",
+      "secret_type": "High Entropy (5.53)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-PCVAQswWemu6UdxsDFFX/+gVeYqKAod3D3UVm91jHwy...",
+        "entropy": 5.53,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:41:01.553054",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/myGameofLife",
+      "path": "mygame_back/node_modules/.package-lock.json",
+      "secret_type": "High Entropy (5.3)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-jWi7abTbYwajOytWCQc37VulmWiRae5RyTpaCyDcS5/...",
+        "entropy": 5.3,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:41:01.554538",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/myGameofLife",
+      "path": "mygame_back/node_modules/.package-lock.json",
+      "secret_type": "High Entropy (5.48)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3...",
+        "entropy": 5.48,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:41:01.556084",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/myGameofLife",
+      "path": "mygame_back/node_modules/.package-lock.json",
+      "secret_type": "High Entropy (5.32)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-7O+FbCihrB5WGbFYesctwmTKae6rOiIzmz1icreWJ+0...",
+        "entropy": 5.32,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:45:04.509532",
+      "type": "SECRET",
+      "repository": "samugit83/myGameofLife",
+      "path": "mygame_back/package-lock.json",
+      "secret_type": "Twilio Account SID",
+      "details": {
+        "matches": 1,
+        "sample": "AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXSt"
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:45:04.520061",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/myGameofLife",
+      "path": "mygame_back/package-lock.json",
+      "secret_type": "High Entropy (5.37)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-PYAthTa2m2VKxuvSD3DPC/Gy+U+sOA1LAuT8mkmRuvw...",
+        "entropy": 5.37,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:45:04.521347",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/myGameofLife",
+      "path": "mygame_back/package-lock.json",
+      "secret_type": "High Entropy (5.53)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-PCVAQswWemu6UdxsDFFX/+gVeYqKAod3D3UVm91jHwy...",
+        "entropy": 5.53,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:45:04.522666",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/myGameofLife",
+      "path": "mygame_back/package-lock.json",
+      "secret_type": "High Entropy (5.3)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-jWi7abTbYwajOytWCQc37VulmWiRae5RyTpaCyDcS5/...",
+        "entropy": 5.3,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:45:04.523724",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/myGameofLife",
+      "path": "mygame_back/package-lock.json",
+      "secret_type": "High Entropy (5.48)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3...",
+        "entropy": 5.48,
+        "length": 95
+      }
+    },
+    {
+      "timestamp": "2026-02-12T21:45:04.525066",
+      "type": "HIGH_ENTROPY",
+      "repository": "samugit83/myGameofLife",
+      "path": "mygame_back/package-lock.json",
+      "secret_type": "High Entropy (5.32)",
+      "details": {
+        "type": "High Entropy String",
+        "value": "sha512-7O+FbCihrB5WGbFYesctwmTKae6rOiIzmz1icreWJ+0...",
+        "entropy": 5.32,
+        "length": 95
+      }
+    }
+  ]
+}

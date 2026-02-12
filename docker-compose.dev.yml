@@ -17,6 +17,9 @@ services:
       - ./webapp:/app
       - webapp_node_modules:/app/node_modules
       - webapp_next_cache:/app/.next
+      - ./recon/output:/data/recon-output:ro
+      - ./gvm_scan/output:/data/gvm-output:ro
+      - ./github_secret_hunt/output:/data/github-hunt-output:ro
 
 volumes:
   webapp_node_modules:

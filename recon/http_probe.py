@@ -1420,6 +1420,8 @@ def run_http_probe(recon_data: dict, output_file: Path = None, settings: dict = 
         print(f"    [*] URLs to probe: {len(urls)}")
         print(f"    [*] Threads: {HTTPX_THREADS}")
         print(f"    [*] Timeout: {HTTPX_TIMEOUT}s")
+        print(f"    [*] Rate limit: {HTTPX_RATE_LIMIT} req/s")
+        print(f"    [*] Follow redirects: {HTTPX_FOLLOW_REDIRECTS}")
 
         if HTTPX_PROBE_TECH_DETECT:
             print(f"    [*] Technology detection: enabled")
@@ -1427,6 +1429,7 @@ def run_http_probe(recon_data: dict, output_file: Path = None, settings: dict = 
             print(f"    [*] TLS probing: enabled")
         if HTTPX_INCLUDE_RESPONSE:
             print(f"    [*] Response body: included")
+        print(f"    [*] Banner grabbing: {BANNER_GRAB_ENABLED}")
 
         start_time = datetime.now()
 

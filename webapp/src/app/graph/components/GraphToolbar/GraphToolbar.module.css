@@ -338,6 +338,37 @@
   color: white;
 }
 
+/* GitHub Secret Hunt Button */
+.githubHuntButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-2-5);
+  background: transparent;
+  border: 1px solid var(--status-info);
+  border-radius: var(--radius-md);
+  color: var(--status-info);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: var(--transition-all);
+}
+
+.githubHuntButton:hover:not(:disabled) {
+  background: var(--status-info);
+  color: white;
+}
+
+.githubHuntButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.githubHuntButtonActive {
+  background: var(--status-info);
+  color: white;
+}
+
 .spinner {
   animation: spin 1s linear infinite;
 }

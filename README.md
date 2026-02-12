@@ -134,6 +134,18 @@ After reconnaissance completes, you can run a GVM network-level vulnerability sc
 
 > **Note:** Default GVM credentials are `admin` / `admin` (auto-created by gvmd on first start).
 
+### Running GitHub Secret Hunt
+
+After reconnaissance completes, you can run a GitHub Secret Hunt to search for exposed secrets, API keys, and credentials in GitHub repositories related to your target:
+
+1. Configure a **GitHub Personal Access Token** and **Target Organization** in the project settings (see [GitHub Secret Hunting parameters](#github-secret-hunting) for step-by-step token setup)
+2. Navigate to Graph page
+3. Click the **GitHub Hunt** button (enabled only when recon data exists for the project)
+4. Watch real-time logs in the GitHub Hunt logs drawer (3-phase progress: Loading Settings, Scanning Repositories, Complete)
+5. Download the results JSON when complete
+
+> **Note:** The GitHub token is used **exclusively for read-only scanning** — it searches repositories and gists for leaked secrets using pattern matching and entropy analysis. It does not modify, create, or delete any content on GitHub.
+
 ### Development Mode
 
 For active development with **Next.js fast refresh** (no rebuild on every change):
@@ -177,7 +189,8 @@ No rebuild needed — just restart.
   - [AI Agent Orchestrator](#4-ai-agent-orchestrator)
   - [Web Application](#5-web-application)
   - [GVM Scanner](#6-gvm-scanner)
-  - [Test Environments](#7-test-environments)
+  - [GitHub Secret Hunter](#7-github-secret-hunter)
+  - [Test Environments](#8-test-environments)
 - [Development Mode](#development-mode)
 - [Documentation](#documentation)
 - [Legal](#legal)
@@ -192,7 +205,7 @@ The platform is built around four pillars:
 
 | Pillar | What it does |
 |--------|-------------|
-| **Reconnaissance Pipeline** | Six sequential scanning phases that map your target's entire attack surface — from subdomain discovery to vulnerability detection — and store the results as a rich, queryable graph. |
+| **Reconnaissance Pipeline** | Six sequential scanning phases that map your target's entire attack surface — from subdomain discovery to vulnerability detection — and store the results as a rich, queryable graph. Complemented by standalone GVM network scanning and GitHub secret hunting modules. |
 | **AI Agent Orchestrator** | A LangGraph-based autonomous agent that reasons about the graph, selects security tools via MCP, transitions through informational / exploitation / post-exploitation phases, and can be steered in real-time via chat. |
 | **Attack Surface Graph** | A Neo4j knowledge graph with 17 node types and 20+ relationship types that serves as the single source of truth for every finding — and the primary data source the AI agent queries before every decision. |
 | **Project Settings Engine** | 180+ per-project parameters — exposed through the webapp UI — that control every tool's behavior, from Naabu thread counts to Nuclei severity filters to agent approval gates. |
@@ -260,10 +273,9 @@ The discovered endpoints — especially those with query parameters — are fed 
 - **CVE enrichment** — each finding is cross-referenced against the NVD (or Vulners) API for CVSS scores, descriptions, and references.
 - **30+ custom security checks** — direct IP access, missing security headers (CSP, HSTS, Referrer-Policy, Permissions-Policy, COOP, CORP, COEP), TLS certificate expiry, DNS security (SPF, DMARC, DNSSEC, zone transfer), open services (Redis without auth, exposed Kubernetes API, SMTP open relay), insecure form actions, and missing rate limiting.
 
-#### Phase 6 — MITRE Enrichment & GitHub Secret Hunting
+#### Phase 6 — MITRE Enrichment
 
 - **MITRE CWE/CAPEC mapping** — every CVE found in Phase 5 is automatically enriched with its corresponding CWE weakness and CAPEC attack patterns, using an auto-updated database from the CVE2CAPEC repository (24-hour cache TTL).
-- **GitHub Secret Hunting** *(under development)* — when configured with a GitHub token, will scan the target organization's repositories, gists, and commit history for leaked API keys, cloud credentials, database connection strings, and private keys using 40+ regex patterns and Shannon entropy analysis. This feature is currently being integrated into the pipeline and is not yet available in production.
 
 #### Output
 
@@ -708,17 +720,38 @@ Configure GVM/OpenVAS network-level vulnerability scanning. These settings contr
 
 #### GitHub Secret Hunting
 
-Search GitHub repositories for exposed secrets, API keys, and credentials related to your target domain. Identifies leaked sensitive data that could enable unauthorized access to systems and services.
+Search GitHub repositories for exposed secrets, API keys, and credentials related to your target domain. GitHub Secret Hunting runs as an **independent module** (separate from the recon pipeline), triggered from the Graph page toolbar after reconnaissance completes — exactly like the GVM vulnerability scanner.
+
+The scanner uses **40+ regex patterns** and **Shannon entropy analysis** to detect leaked credentials including AWS keys, Google Cloud credentials, database connection strings, JWT tokens, private RSA/SSH keys, Slack/Discord/Stripe tokens, and many more. Results are stored in the Neo4j graph and can be downloaded as JSON.
+
+> **Important:** The GitHub token is used **exclusively for read-only scanning**. It accesses the GitHub API to list repositories and read file contents — it never creates, modifies, or deletes anything on GitHub.
+
+**How to Create a GitHub Personal Access Token:**
+
+1. Go to **GitHub.com** → click your profile picture (top-right) → **Settings**
+2. In the left sidebar, scroll to the bottom and click **Developer settings**
+3. Click **Personal access tokens** → **Tokens (classic)**
+4. Click **Generate new token** → **Generate new token (classic)**
+5. Give it a descriptive name (e.g., `redamon-secret-scan`)
+6. Set an expiration (recommended: 30 or 90 days)
+7. Select the following scopes:
+   - **`repo`** — Full control of private repositories. Required to read repository contents and search through code. This is the minimum required scope.
+   - **`read:org`** — Read organization membership. Required to list organization repositories and discover member accounts when "Scan Member Repositories" is enabled.
+   - **`gist`** — Access gists. Required only if you enable "Scan Gists" to search for secrets in public and private gists.
+8. Click **Generate token** and copy the token immediately (it starts with `ghp_`). You won't be able to see it again.
+9. Paste the token into the **GitHub Access Token** field in your project settings.
+
+**Parameters:**
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| GitHub Access Token | — | Required for GitHub secret scanning. Create a token with `repo` scope (ghp_xxxxxxxxxxxx) |
-| Target Organization | — | GitHub organization name to scan |
-| Scan Member Repositories | false | Include repositories of organization members |
-| Scan Gists | false | Search for secrets in gists |
-| Scan Commits | false | Search commit history for secrets. Most expensive operation — disabling saves 50%+ time |
-| Max Commits to Scan | 100 | Number of commits to scan per repository (1-1000). Only visible when Scan Commits is enabled. Scales linearly: 1000 = ~10x slower |
-| Output as JSON | false | Save results in JSON format |
+| GitHub Access Token | — | The Personal Access Token (PAT) that authenticates API requests to GitHub. Without this token, no scanning can occur — all other options remain disabled until a valid token is provided. The token format is `ghp_xxxxxxxxxxxx`. See the step-by-step guide above for creating one with the correct scopes |
+| Target Organization | — | The GitHub **organization name** or **username** to scan. This is the account whose repositories will be searched for leaked secrets. For example, if your target domain is `example.com` and their GitHub organization is `example-inc`, enter `example-inc` here. You can also enter a personal GitHub username to scan that user's public repositories. The scanner will enumerate all accessible repositories under this account and search their contents for secret patterns |
+| Scan Member Repositories | false | When enabled, the scanner also discovers and scans repositories belonging to **individual members** of the target organization — not just the organization's own repos. This is useful because developers often store work-related code (including secrets) in their personal accounts. Requires the `read:org` scope on your token. Significantly increases scan scope and time |
+| Scan Gists | false | When enabled, the scanner searches **GitHub Gists** (code snippets) created by the organization and its members. Developers frequently paste configuration files, API keys, and connection strings into gists without realizing they're public. Requires the `gist` scope on your token |
+| Scan Commits | false | When enabled, the scanner examines **commit history** — not just the current state of files, but also previous versions. This catches secrets that were committed and later removed (but remain in git history). **This is the most expensive operation** — disabling it saves 50%+ of total scan time. Each commit requires a separate API call to retrieve and analyze the diff |
+| Max Commits to Scan | 100 | The maximum number of commits to examine **per repository**. Only visible when "Scan Commits" is enabled. Scan time scales linearly with this value: 100 commits (default) provides a reasonable balance between coverage and speed; 500 covers more history at ~5x the time; 1000 is thorough but ~10x slower. Valid range: 1–1000 |
+| Output as JSON | false | When enabled, saves the complete scan results as a structured JSON file (`github_hunt_{project_id}.json`) that can be downloaded from the Graph page. The JSON includes every detected secret with its file path, line number, matched pattern, repository name, and entropy score |
 
 #### Agent Behavior
 
@@ -816,6 +849,7 @@ flowchart TB
     subgraph Scanning["🔍 Scanning Layer"]
         Recon[Recon Pipeline<br/>Docker Container]
         GVM[GVM/OpenVAS Scanner<br/>Network Vuln Assessment]
+        GHHunt[GitHub Secret Hunter<br/>Credential Scanning]
     end
 
     subgraph Data["💾 Data Layer"]
@@ -836,7 +870,9 @@ flowchart TB
     Webapp --> Postgres
     ReconOrch -->|Docker SDK| Recon
     ReconOrch -->|Docker SDK| GVM
+    ReconOrch -->|Docker SDK| GHHunt
     Recon -->|Fetch Settings| Webapp
+    GHHunt -->|GitHub API| GHHunt
     Agent --> Neo4j
     Agent -->|MCP Protocol| Naabu
     Agent -->|MCP Protocol| Curl
@@ -877,6 +913,12 @@ flowchart TB
         JSON -->|IPs + Hostnames| GVM[🛡️ GVM/OpenVAS<br/>170k+ NVTs]
         GVM --> GVMResults[(GVM JSON Output)]
         GVMResults --> Graph
+    end
+
+    subgraph Phase2c["Phase 2c: GitHub Secret Hunt (Optional)"]
+        JSON -->|Target Domain| GHHunt[🔑 GitHub Secret Hunter<br/>40+ Patterns + Entropy]
+        GHHunt --> GHResults[(GitHub Hunt JSON Output)]
+        GHResults --> Graph
     end
 
     subgraph Phase3["Phase 3: AI Analysis"]
@@ -961,6 +1003,11 @@ flowchart TB
                 GVMClient[python-gvm Client]
             end
 
+            subgraph GHHuntContainer["github-secret-hunter-container"]
+                GHHuntPy[Python Scripts]
+                PyGithub[PyGithub Client]
+            end
+
             subgraph GuineaContainer["guinea-pigs"]
                 Apache1[Apache 2.4.25<br/>CVE-2017-3167]
                 Apache2[Apache 2.4.49<br/>CVE-2021-41773]
@@ -970,6 +1017,7 @@ flowchart TB
         Volumes["📁 Shared Volumes"]
         ReconOrchContainer -->|Manages| ReconContainer
         ReconOrchContainer -->|Manages| GVMScanContainer
+        ReconOrchContainer -->|Manages| GHHuntContainer
         GVMScanContainer -->|Unix Socket| GVMd
         GVMd --> OSPD
         GVMd --> PgGVM
@@ -1141,6 +1189,17 @@ sequenceDiagram
         GVM->>Neo4j: Store Vulnerability + CVE nodes
         Neo4j-->>User: Network vulns added to graph
     end
+
+    rect rgb(80, 60, 80)
+        Note over GVM: Phase 7 (Optional): GitHub Secret Hunt
+        User->>GVM: Trigger GitHub Hunt from UI
+        GVM->>GVM: Load project settings (token, org, options)
+        GVM->>GVM: Enumerate repositories + gists
+        GVM->>GVM: Scan contents with 40+ patterns + entropy
+        GVM->>GVM: Scan commit history (if enabled)
+        GVM->>Neo4j: Store findings in graph
+        Neo4j-->>User: Leaked secrets added to graph
+    end
 ```
 
 ### Agent Workflow (ReAct Pattern)
@@ -1293,7 +1352,21 @@ Greenbone Vulnerability Management (GVM), formerly known as OpenVAS, is an enter
 
 ---
 
-### 7. Test Environments
+### 7. GitHub Secret Hunter
+
+Standalone module that scans GitHub repositories, gists, and commit history for exposed secrets and credentials related to your target. Runs independently from the recon pipeline — triggered from the Graph page after reconnaissance completes.
+
+- **40+ secret detection patterns** — regex-based matching for AWS keys, Google Cloud credentials, database connection strings, JWT tokens, private keys, Slack/Discord/Stripe tokens, SSH keys, and more.
+- **Shannon entropy analysis** — detects high-entropy strings that may be secrets even when no regex pattern matches, reducing false negatives.
+- **Commit history scanning** — examines git diffs to find secrets that were committed and later removed but remain in version history.
+- **Organization and member scanning** — enumerates repositories under a target organization and optionally extends to repositories of individual organization members.
+- **Gist scanning** — searches public and private gists for leaked credentials.
+- **Graph database linkage** — findings are stored in Neo4j and linked to the target's attack surface graph.
+- **Webapp integration** — triggered from the Graph page via a dedicated "GitHub Hunt" button (requires prior recon data). Logs stream in real-time to a log drawer with 3-phase progress tracking, and results can be downloaded as JSON.
+
+---
+
+### 8. Test Environments
 
 > **Status: Under Development** — Guinea pig environments are provided as reference configurations but are not yet fully integrated into the automated pipeline.
 
@@ -1325,6 +1398,7 @@ These containers are designed to be deployed alongside the main stack so the AI 
 | Metasploit Guide | [agentic/README.METASPLOIT.GUIDE.md](agentic/README.METASPLOIT.GUIDE.md) |
 | Webapp | [webapp/README.WEBAPP.md](webapp/README.WEBAPP.md) |
 | GVM Scanner | [gvm_scan/README.GVM.md](gvm_scan/README.GVM.md) |
+| GitHub Secret Hunter | [github_secret_hunt/README.md](github_secret_hunt/README.md) |
 | Test Environments | [guinea_pigs/README.GPIGS.md](guinea_pigs/README.GPIGS.md) |
 | Changelog | [CHANGELOG.md](CHANGELOG.md) |
 | Full Disclaimer | [DISCLAIMER.md](DISCLAIMER.md) |
