@@ -12,6 +12,7 @@ Intentionally vulnerable Apache servers for security testing and exploitation pr
 |--------|---------|------|-------------|
 | `apache_2.4.49` | Apache 2.4.49 | CVE-2021-41773, CVE-2021-42013 | Path traversal + RCE |
 | `apache_2.4.25` | Apache 2.4.25 | CVE-2017-3167, CVE-2017-3169 | Auth bypass + DoS |
+| `node_serialize_1.0.0` | Node.js 8.x + node-serialize 0.0.4 | CVE-2017-5941 | Deserialization RCE |
 
 ---
 
@@ -66,6 +67,14 @@ ssh -i ~/.ssh/guinea_pigs.pem ubuntu@15.160.68.117 "bash ~/apache/setup.sh"
 ```bash
 ssh -i ~/.ssh/guinea_pigs.pem ubuntu@15.160.68.117 "cd ~/apache && sudo docker-compose down"
 scp -i ~/.ssh/guinea_pigs.pem -r apache_2.4.25 ubuntu@15.160.68.117:~/apache
+ssh -i ~/.ssh/guinea_pigs.pem ubuntu@15.160.68.117 "cd ~/apache && sudo docker-compose build --no-cache && sudo docker-compose up -d"
+```
+
+### Switch to Node.js node-serialize (Deserialization RCE)
+
+```bash
+ssh -i ~/.ssh/guinea_pigs.pem ubuntu@15.160.68.117 "cd ~/apache && sudo docker-compose down"
+scp -i ~/.ssh/guinea_pigs.pem -r node_serialize_1.0.0 ubuntu@15.160.68.117:~/apache
 ssh -i ~/.ssh/guinea_pigs.pem ubuntu@15.160.68.117 "cd ~/apache && sudo docker-compose build --no-cache && sudo docker-compose up -d"
 ```
 
