@@ -3,9 +3,10 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ChevronDown, Crosshair, FolderOpen } from 'lucide-react'
+import { Crosshair, FolderOpen } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { ProjectSelector } from './ProjectSelector'
+import { UserSelector } from './UserSelector'
 import styles from './GlobalHeader.module.css'
 
 const navItems = [
@@ -54,13 +55,7 @@ export function GlobalHeader() {
 
         <div className={styles.divider} />
 
-        <button className={styles.userButton}>
-          <div className={styles.avatar}>
-            <span>RA</span>
-          </div>
-          <span className={styles.userName}>Admin</span>
-          <ChevronDown size={14} />
-        </button>
+        <UserSelector />
       </div>
     </header>
   )
