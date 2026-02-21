@@ -108,6 +108,8 @@ docker compose up -d postgres neo4j recon-orchestrator kali-sandbox agent webapp
 
 Go to **http://localhost:3000** — create a project, configure your target, and start scanning.
 
+> For a detailed walkthrough of every feature, check the **[Wiki](https://github.com/samugit83/redamon/wiki)**.
+
 ### Common Commands
 
 ```bash
