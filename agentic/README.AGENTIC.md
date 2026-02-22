@@ -374,10 +374,10 @@ flowchart TB
 
     UNCLASS --> UNCLASS_TOOLS[Generic Tools<br/>Use available tools based on technique]
 
-    style CVE fill:#FFD700
-    style BRUTE fill:#FF6B6B
-    style UNCLASS fill:#9CA3AF
-    style CLASSIFY fill:#87CEEB
+    style CVE fill:#6b6b6b
+    style BRUTE fill:#4a4a4a
+    style UNCLASS fill:#8a8a8a
+    style CLASSIFY fill:#5a5a5a
 ```
 
 ### Classification Model
@@ -428,8 +428,8 @@ flowchart TB
     FORCE_ASK --> PAUSE([Pause for user answer])
     PAUSE --> THINK
 
-    style FORCE_ASK fill:#FFD700
-    style PAUSE fill:#FFD700
+    style FORCE_ASK fill:#6b6b6b
+    style PAUSE fill:#6b6b6b
 ```
 
 This prevents exploitation failures by ensuring reverse/bind payload parameters are available before the agent attempts to run Metasploit exploits. Hydra brute force attacks bypass this check since they use `execute_hydra` (stateless) and establish sessions separately via `sshpass` or database clients.
@@ -491,9 +491,9 @@ flowchart TB
     POST --> ExplTools
     POST --> PostTools
 
-    style INFO fill:#90EE90
-    style EXPL fill:#FFD700
-    style POST fill:#FF6B6B
+    style INFO fill:#7a7a7a
+    style EXPL fill:#6b6b6b
+    style POST fill:#4a4a4a
 ```
 
 ### MCP Tool Execution Flow
@@ -596,8 +596,8 @@ flowchart TB
     C10 --> |Separate MCP tool| POLL[Poll for sessions]
     POLL --> |sessions -l| PROC
 
-    style PROC fill:#FF6B6B
-    style C10 fill:#FFD700
+    style PROC fill:#4a4a4a
+    style C10 fill:#6b6b6b
 ```
 
 ---
@@ -912,14 +912,14 @@ flowchart TB
 
     GEN --> END([Return response])
 
-    style START fill:#90EE90
-    style END fill:#90EE90
-    style PAUSE_A fill:#FFD700
-    style PAUSE_Q fill:#FFD700
-    style CLASSIFY fill:#DDA0DD
-    style THINK fill:#87CEEB
-    style THINK_AGAIN fill:#87CEEB
-    style GEN fill:#87CEEB
+    style START fill:#7a7a7a
+    style END fill:#7a7a7a
+    style PAUSE_A fill:#6b6b6b
+    style PAUSE_Q fill:#6b6b6b
+    style CLASSIFY fill:#636363
+    style THINK fill:#5a5a5a
+    style THINK_AGAIN fill:#5a5a5a
+    style GEN fill:#5a5a5a
 ```
 
 ### Phase Transition Approval Flow
@@ -1157,9 +1157,9 @@ flowchart TB
     O2_WORK -.-> TARGET
     O3_WORK -.-> TARGET
 
-    style Objective1 fill:#90EE90
-    style Objective2 fill:#87CEEB
-    style Objective3 fill:#FFD700
+    style Objective1 fill:#7a7a7a
+    style Objective2 fill:#5a5a5a
+    style Objective3 fill:#6b6b6b
 ```
 
 ---
@@ -1377,8 +1377,8 @@ flowchart LR
     CF -.->|FOUND_ON| Sub
     CF -.->|FINDING_RELATES_CVE| CVE
 
-    style ReconGraph fill:#1a365d,color:#fff
-    style EvoGraphNodes fill:#553300,color:#fff
+    style ReconGraph fill:#2d2d2d,color:#fff
+    style EvoGraphNodes fill:#6e6e6e,color:#fff
 ```
 
 ### Integration with Orchestrator Lifecycle
@@ -1469,9 +1469,9 @@ flowchart TB
     CF -.->|"query_prior_chains()<br/>(loaded once at session init)"| PC
     CFL -.->|"query_prior_chains()<br/>(loaded once at session init)"| PC
 
-    style InMemory fill:#285e61,color:#fff
-    style Persistent fill:#553300,color:#fff
-    style Prompt fill:#44337a,color:#fff
+    style InMemory fill:#474747,color:#fff
+    style Persistent fill:#6e6e6e,color:#fff
+    style Prompt fill:#404040,color:#fff
 ```
 
 **Why not query Neo4j for the current session's context?**

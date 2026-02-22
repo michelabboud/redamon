@@ -667,23 +667,23 @@ flowchart TB
     ChainFinding -.->|FOUND_ON| IP
     ChainFinding -.->|FINDING_RELATES_CVE| CVE
 
-    style Domain fill:#1a365d,color:#fff
-    style Subdomain fill:#1a365d,color:#fff
-    style IP fill:#1a365d,color:#fff
-    style Port fill:#1a365d,color:#fff
-    style Service fill:#1a365d,color:#fff
-    style BaseURL fill:#2a4365,color:#fff
-    style Endpoint fill:#2a4365,color:#fff
-    style Parameter fill:#2a4365,color:#fff
-    style Technology fill:#285e61,color:#fff
-    style Header fill:#285e61,color:#fff
-    style CVE fill:#742a2a,color:#fff
-    style Vulnerability fill:#742a2a,color:#fff
-    style MitreData fill:#744210,color:#fff
-    style Capec fill:#744210,color:#fff
-    style AttackChain fill:#553300,color:#fff
-    style ChainStep fill:#553300,color:#fff
-    style ChainFinding fill:#553300,color:#fff
+    style Domain fill:#2d2d2d,color:#fff
+    style Subdomain fill:#2d2d2d,color:#fff
+    style IP fill:#2d2d2d,color:#fff
+    style Port fill:#2d2d2d,color:#fff
+    style Service fill:#2d2d2d,color:#fff
+    style BaseURL fill:#3a3a3a,color:#fff
+    style Endpoint fill:#3a3a3a,color:#fff
+    style Parameter fill:#3a3a3a,color:#fff
+    style Technology fill:#474747,color:#fff
+    style Header fill:#474747,color:#fff
+    style CVE fill:#545454,color:#fff
+    style Vulnerability fill:#545454,color:#fff
+    style MitreData fill:#616161,color:#fff
+    style Capec fill:#616161,color:#fff
+    style AttackChain fill:#6e6e6e,color:#fff
+    style ChainStep fill:#6e6e6e,color:#fff
+    style ChainFinding fill:#6e6e6e,color:#fff
 ```
 
 Vulnerabilities connect differently depending on their source:
@@ -1146,7 +1146,7 @@ sequenceDiagram
     User->>Main: python main.py
     Main->>Main: Load project settings (API or defaults)
 
-    rect rgb(40, 40, 80)
+    rect rgb(35, 35, 35)
         Note over DD: Phase 1: Domain Discovery
         Main->>DD: discover_subdomains(domain)
         DD->>DD: WHOIS lookup
@@ -1157,7 +1157,7 @@ sequenceDiagram
         DD-->>Main: subdomains + IPs
     end
 
-    rect rgb(40, 80, 40)
+    rect rgb(45, 45, 45)
         Note over PS: Phase 2: Port Scanning
         Main->>PS: run_port_scan(targets)
         PS->>PS: Naabu SYN scan
@@ -1166,7 +1166,7 @@ sequenceDiagram
         PS-->>Main: open ports + services
     end
 
-    rect rgb(80, 40, 40)
+    rect rgb(55, 55, 55)
         Note over HP: Phase 3: HTTP Probing
         Main->>HP: run_http_probe(targets)
         HP->>HP: HTTP/HTTPS requests
@@ -1176,7 +1176,7 @@ sequenceDiagram
         HP-->>Main: live URLs + tech stack
     end
 
-    rect rgb(80, 80, 40)
+    rect rgb(40, 40, 40)
         Note over RE: Phase 4: Resource Enumeration
         Main->>RE: run_resource_enum(urls)
         RE->>RE: Katana crawl
@@ -1185,7 +1185,7 @@ sequenceDiagram
         RE-->>Main: endpoints + parameters
     end
 
-    rect rgb(80, 40, 80)
+    rect rgb(50, 50, 50)
         Note over VS: Phase 5: Vulnerability Scan
         Main->>VS: run_vuln_scan(targets)
         VS->>VS: Nuclei templates
@@ -1198,7 +1198,7 @@ sequenceDiagram
     Main->>Neo4j: Update graph database
     Neo4j-->>User: Graph ready for visualization
 
-    rect rgb(40, 80, 80)
+    rect rgb(60, 60, 60)
         Note over GVM: Phase 6 (Optional): Network Vuln Scan
         User->>GVM: Trigger GVM scan from UI
         GVM->>JSON: Read recon output (IPs + hostnames)
@@ -1209,7 +1209,7 @@ sequenceDiagram
         Neo4j-->>User: Network vulns added to graph
     end
 
-    rect rgb(80, 60, 80)
+    rect rgb(48, 48, 48)
         Note over GVM: Phase 7 (Optional): GitHub Secret Hunt
         User->>GVM: Trigger GitHub Hunt from UI
         GVM->>GVM: Load project settings (token, org, options)
