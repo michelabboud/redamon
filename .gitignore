@@ -106,6 +106,7 @@ gvm_scan/output/*.json
 # Log files
 *.log
 /logs/
+agentic/logs/
 
 # OS generated files
 .DS_Store
