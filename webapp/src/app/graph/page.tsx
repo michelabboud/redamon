@@ -221,6 +221,21 @@ export default function GraphPage() {
     return Array.from(ids).sort()
   }, [data, CHAIN_NODE_TYPES])
 
+  const sessionTitles = useMemo(() => {
+    if (!data) return {} as Record<string, string>
+    const titles: Record<string, string> = {}
+    for (const node of data.nodes) {
+      if (node.type === 'AttackChain') {
+        const chainId = node.properties?.chain_id as string | undefined
+        const title = node.properties?.title as string | undefined
+        if (chainId && title) {
+          titles[chainId] = title
+        }
+      }
+    }
+    return titles
+  }, [data])
+
   const [hiddenSessions, setHiddenSessions] = useState<Set<string>>(new Set())
 
   // Auto-show newly discovered sessions
@@ -738,6 +753,7 @@ export default function GraphPage() {
         onSelectAllTypes={handleSelectAllTypes}
         onClearAllTypes={handleClearAllTypes}
         sessionChainIds={sessionChainIds}
+        sessionTitles={sessionTitles}
         hiddenSessions={hiddenSessions}
         onToggleSession={handleToggleSession}
         onShowAllSessions={handleShowAllSessions}

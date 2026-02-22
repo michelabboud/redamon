@@ -20,6 +20,7 @@ interface PageBottomBarProps {
   onClearAllTypes?: () => void
   // Session visibility props
   sessionChainIds?: string[]
+  sessionTitles?: Record<string, string>
   hiddenSessions?: Set<string>
   onToggleSession?: (chainId: string) => void
   onShowAllSessions?: () => void
@@ -37,6 +38,7 @@ export function PageBottomBar({
   onSelectAllTypes,
   onClearAllTypes,
   sessionChainIds = [],
+  sessionTitles = {},
   hiddenSessions,
   onToggleSession,
   onShowAllSessions,
@@ -191,7 +193,13 @@ export function PageBottomBar({
                         onClick={() => onToggleSession?.(chainId)}
                       >
                         <span className={styles.sessionDot} />
-                        <span className={styles.sessionCode}>{chainId.slice(-8)}</span>
+                        <span className={styles.sessionCode} title={sessionTitles[chainId] || chainId}>
+                          {sessionTitles[chainId]
+                            ? (sessionTitles[chainId].length > 30
+                                ? sessionTitles[chainId].slice(0, 30) + '...'
+                                : sessionTitles[chainId])
+                            : chainId.slice(-8)}
+                        </span>
                         <span className={styles.sessionStatus}>{isVisible ? 'ON' : 'OFF'}</span>
                       </button>
                     )
