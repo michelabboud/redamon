@@ -42,6 +42,12 @@
 <p align="center">
   <img src="assets/agent.gif" alt="RedAmon Agent Demo" width="100%"/>
 </p>
+<p align="center">
+  <a href="https://youtu.be/afViJUit0xE"><img src="https://img.shields.io/badge/▶_WATCH_DEMO-3_Parallel_Agents-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="Watch Demo"/></a>
+</p>
+<p align="center">
+  <em>Three AI agents attack simultaneously — one brute-forces SSH credentials with Hydra, one chains a CVE to escalate to root and defaces the homepage, one hunts down every XSS vulnerability on the frontend.</em>
+</p>
 
 ---
 
