@@ -20,6 +20,11 @@ The **RedAmon Agentic System** is an AI-powered penetration testing orchestrator
 8. [Detailed Workflows](#detailed-workflows)
 9. [Multi-Objective Support](#multi-objective-support)
 10. [Security & Multi-Tenancy](#security--multi-tenancy)
+11. [EvoGraph — Evolutive Attack Chain Graph](#evograph--evolutive-attack-chain-graph)
+12. [Prompt Token Optimization](#prompt-token-optimization)
+13. [Error Handling & Resilience](#error-handling--resilience)
+14. [Configuration Reference](#configuration-reference)
+15. [Running the System](#running-the-system)
 
 ---
 
@@ -115,6 +120,7 @@ flowchart TB
 | `orchestrator_helpers/phase.py` | Attack path classification & phase determination |
 | `orchestrator_helpers/parsing.py` | LLM response parsing (decisions & inline analysis) |
 | `orchestrator_helpers/json_utils.py` | JSON serialization with datetime support |
+| `orchestrator_helpers/chain_graph_writer.py` | EvoGraph persistence — attack chain nodes, bridge relationships, and cross-session queries to Neo4j |
 | `orchestrator_helpers/debug.py` | Graph visualization (Mermaid PNG export) |
 
 ### Key Classes
@@ -198,6 +204,9 @@ erDiagram
         bool task_complete "Whether objective is achieved"
         string completion_reason "Why task ended"
         bool msf_session_reset_done "Metasploit auto-reset tracking"
+        list chain_findings_memory "EvoGraph: accumulated findings"
+        list chain_failures_memory "EvoGraph: accumulated failures"
+        list chain_decisions_memory "EvoGraph: accumulated decisions"
     }
 
     AgentState ||--o{ ExecutionStep : execution_trace
@@ -1208,6 +1217,317 @@ flowchart LR
 
 ---
 
+## EvoGraph — Evolutive Attack Chain Graph
+
+**EvoGraph** is a persistent, evolutionary graph in Neo4j that runs **parallel to the recon graph**. While the recon graph captures *what exists* on the target's attack surface (domains, IPs, ports, services, vulnerabilities), EvoGraph captures *what the agent did about it* — every tool execution, every discovery, every failure, every strategic decision — across the entire attack lifecycle.
+
+It transforms the agent from a **stateless tool executor** into a **knowledge-accumulating system** that learns from every session and builds on prior work.
+
+### Why EvoGraph Exists
+
+The previous approach used a flat `execution_trace` — a linear list of `ExecutionStep` objects that was:
+
+| Problem | Impact |
+|---------|--------|
+| **Linear** | No branching, no causal links between steps, no semantic grouping |
+| **Ephemeral** | Lost when the session ended — only persisted in LangGraph checkpoint |
+| **Disconnected** | No structured links to the recon graph (Domain, IP, CVE, etc.) |
+| **Context-blind** | Every step looked the same regardless of significance — the LLM had to scan a wall of text to find what mattered |
+| **No failure learning** | Failed attempts were buried chronologically, indistinguishable from successes |
+
+EvoGraph solves all of these by replacing the flat trace with a structured, queryable, persistent graph.
+
+### Node Taxonomy
+
+EvoGraph introduces **5 node types**, each serving a distinct purpose in the attack lifecycle:
+
+```mermaid
+classDiagram
+    class AttackChain {
+        +string chain_id
+        +string title
+        +string objective
+        +string status
+        +string attack_path_type
+        +int total_steps
+        +int successful_steps
+        +int failed_steps
+        +list phases_reached
+        +string final_outcome
+    }
+
+    class ChainStep {
+        +string step_id
+        +int iteration
+        +string phase
+        +string tool_name
+        +string tool_args_summary
+        +string thought
+        +string reasoning
+        +string output_summary
+        +bool success
+        +string error_message
+        +int duration_ms
+    }
+
+    class ChainFinding {
+        +string finding_id
+        +string finding_type
+        +string severity
+        +string title
+        +string evidence
+        +int confidence
+        +string phase
+    }
+
+    class ChainDecision {
+        +string decision_id
+        +string decision_type
+        +string from_state
+        +string to_state
+        +string reason
+        +string made_by
+        +bool approved
+    }
+
+    class ChainFailure {
+        +string failure_id
+        +string failure_type
+        +string tool_name
+        +string error_message
+        +string lesson_learned
+        +bool retry_possible
+    }
+
+    AttackChain "1" --> "*" ChainStep : HAS_STEP
+    ChainStep "1" --> "0..1" ChainStep : NEXT_STEP
+    ChainStep "1" --> "*" ChainFinding : PRODUCED
+    ChainStep "1" --> "*" ChainFailure : FAILED_WITH
+    ChainStep "1" --> "0..1" ChainDecision : LED_TO
+    ChainDecision "1" --> "0..1" ChainStep : DECISION_PRECEDED
+```
+
+| Node Type | Purpose | Created When |
+|-----------|---------|-------------|
+| **AttackChain** | Root of an attack chain. Maps 1:1 to a chat session (`chain_id = sessionId`) | `_start_new_objective_node()` via `fire_create_attack_chain()` |
+| **ChainStep** | Each tool execution — tool name, arguments, output analysis, success/failure | `_process_tool_output_node()` via `sync_record_step()` |
+| **ChainFinding** | Important intelligence discovered during a step — classified by type and severity | After step analysis via `fire_record_finding()` |
+| **ChainDecision** | Strategic decision points — phase transitions, strategy changes, user approvals | On user approval/abort via `fire_record_decision()` |
+| **ChainFailure** | Structured record of what was tried and why it failed, with lessons learned | When step fails via `fire_record_failure()` |
+
+**Finding Types:** `vulnerability_confirmed`, `credential_found`, `exploit_success`, `access_gained`, `privilege_escalation`, `service_identified`, `exploit_module_found`, `defense_detected`, `configuration_found`, `custom`
+
+**Failure Types:** `exploit_failed`, `authentication_failed`, `connection_failed`, `permission_denied`, `timeout`, `tool_error`, `detection_blocked`, `payload_failed`
+
+### Relationship Taxonomy
+
+**Intra-chain relationships** connect attack chain nodes to each other:
+
+| Relationship | From → To | Purpose |
+|-------------|-----------|---------|
+| `HAS_STEP` | AttackChain → ChainStep | Links chain root to its first step |
+| `NEXT_STEP` | ChainStep → ChainStep | Sequential execution order — the evolutionary link |
+| `PRODUCED` | ChainStep → ChainFinding | Step produced this finding |
+| `FAILED_WITH` | ChainStep → ChainFailure | Step failed with this failure |
+| `LED_TO` | ChainStep → ChainDecision | Step triggered a decision point |
+| `DECISION_PRECEDED` | ChainDecision → ChainStep | Decision led to the next step |
+
+**Bridge relationships** connect attack chain nodes **back to the recon graph**:
+
+| Relationship | From → To | Purpose |
+|-------------|-----------|---------|
+| `CHAIN_TARGETS` | AttackChain → IP / Subdomain / Port / CVE / Domain | The chain's primary target(s) in the recon graph |
+| `STEP_TARGETED` | ChainStep → IP / Subdomain / Port | Infrastructure node this step acted on |
+| `STEP_EXPLOITED` | ChainStep → CVE | CVE this step attempted to exploit |
+| `STEP_IDENTIFIED` | ChainStep → Technology | Technology identified during this step |
+| `FOUND_ON` | ChainFinding → IP / Subdomain | Where the finding was discovered |
+| `FINDING_RELATES_CVE` | ChainFinding → CVE | CVE related to the finding |
+| `CREDENTIAL_FOR` | ChainFinding → Service / Port | Service/port the credential works on |
+
+```mermaid
+flowchart LR
+    subgraph ReconGraph["Recon Graph (existing)"]
+        IP[IP]
+        Sub[Subdomain]
+        Port[Port]
+        CVE[CVE]
+        Tech[Technology]
+        Service[Service]
+    end
+
+    subgraph EvoGraphNodes["EvoGraph (attack chain)"]
+        AC[AttackChain]
+        CS1[ChainStep 1]
+        CS2[ChainStep 2]
+        CF[ChainFinding]
+        CFL[ChainFailure]
+        CD[ChainDecision]
+    end
+
+    AC -->|HAS_STEP| CS1
+    CS1 -->|NEXT_STEP| CS2
+    CS1 -->|PRODUCED| CF
+    CS2 -->|FAILED_WITH| CFL
+    CS2 -->|LED_TO| CD
+
+    AC -.->|CHAIN_TARGETS| IP
+    CS1 -.->|STEP_TARGETED| IP
+    CS1 -.->|STEP_EXPLOITED| CVE
+    CS2 -.->|STEP_IDENTIFIED| Tech
+    CF -.->|FOUND_ON| Sub
+    CF -.->|FINDING_RELATES_CVE| CVE
+
+    style ReconGraph fill:#1a365d,color:#fff
+    style EvoGraphNodes fill:#553300,color:#fff
+```
+
+### Integration with Orchestrator Lifecycle
+
+EvoGraph writes happen at specific points in the orchestrator lifecycle. All writes are **fire-and-forget** (async, non-blocking) except `sync_record_step()` which blocks to ensure the step node exists before findings/failures reference it.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Orch as Orchestrator
+    participant CG as chain_graph_writer
+    participant Neo4j
+    participant State as AgentState
+
+    User->>Orch: New message (start objective)
+    Orch->>CG: fire_create_attack_chain()
+    CG-->>Neo4j: MERGE AttackChain + CHAIN_TARGETS bridges
+    Note over CG,Neo4j: Async (fire-and-forget)
+
+    loop Each ReAct iteration
+        Orch->>Orch: Think → select tool → execute tool
+        Orch->>Orch: Analyze output (OutputAnalysisInline)
+        Orch->>State: Append to chain_findings_memory
+        Orch->>State: Append to chain_failures_memory (if failed)
+        Orch->>CG: sync_record_step()
+        CG->>Neo4j: CREATE ChainStep + bridge rels
+        Note over CG,Neo4j: Synchronous (blocking)
+
+        opt Finding produced
+            Orch->>CG: fire_record_finding()
+            CG-->>Neo4j: CREATE ChainFinding + PRODUCED + bridges
+        end
+
+        opt Step failed
+            Orch->>CG: fire_record_failure()
+            CG-->>Neo4j: CREATE ChainFailure + FAILED_WITH
+        end
+
+        Note over Orch,State: Next think step reads chain_*_memory<br/>via format_chain_context()
+    end
+
+    opt Phase transition
+        Orch->>State: Append to chain_decisions_memory
+        Orch->>CG: fire_record_decision()
+        CG-->>Neo4j: CREATE ChainDecision + LED_TO
+    end
+
+    Orch->>CG: fire_update_chain_status()
+    CG-->>Neo4j: SET status='completed', final_outcome
+```
+
+### Dual Memory Architecture
+
+EvoGraph uses a **dual-recording pattern**: every significant event is written to both in-memory lists (for fast LLM context) and Neo4j (for persistence and cross-session querying). The two systems serve different purposes and never depend on each other at runtime.
+
+```mermaid
+flowchart TB
+    subgraph Event["Tool Execution Event"]
+        EXEC[Output analyzed by LLM]
+    end
+
+    subgraph InMemory["Working Memory (AgentState)"]
+        FM[chain_findings_memory]
+        FAILM[chain_failures_memory]
+        DM[chain_decisions_memory]
+    end
+
+    subgraph Persistent["Long-Term Memory (Neo4j)"]
+        CF[ChainFinding nodes]
+        CFL[ChainFailure nodes]
+        CD[ChainDecision nodes]
+    end
+
+    subgraph Prompt["System Prompt Injection"]
+        CC["{chain_context}<br/>format_chain_context()"]
+        PC["{prior_chain_history}<br/>format_prior_chains()"]
+    end
+
+    EXEC -->|"Append dict (instant)"| FM
+    EXEC -->|"Append dict (instant)"| FAILM
+    EXEC -->|"fire_record_* (async)"| CF
+    EXEC -->|"fire_record_* (async)"| CFL
+
+    FM --> CC
+    FAILM --> CC
+    DM --> CC
+
+    CF -.->|"query_prior_chains()<br/>(loaded once at session init)"| PC
+    CFL -.->|"query_prior_chains()<br/>(loaded once at session init)"| PC
+
+    style InMemory fill:#285e61,color:#fff
+    style Persistent fill:#553300,color:#fff
+    style Prompt fill:#44337a,color:#fff
+```
+
+**Why not query Neo4j for the current session's context?**
+
+| Concern | Impact |
+|---------|--------|
+| **Race condition** | Graph writes are async. When think iteration N+1 runs, the write from iteration N may not have landed yet |
+| **Latency** | A Neo4j query adds ~100-200ms per iteration. Over 15-30 iterations, that's 1.5-6s of added latency |
+| **Availability** | If Neo4j is slow or unreachable, the agent cannot think at all |
+
+The in-memory lists are the **fast working memory** for the current session. Neo4j is the **persistent long-term memory** for cross-session queries.
+
+### Exploit Success as ChainFinding
+
+The old standalone `Exploit` node has been replaced by `ChainFinding(finding_type="exploit_success")`. When an exploit succeeds, `fire_record_exploit_success()` creates a ChainFinding with:
+
+- **Metasploit metadata**: module path, payload, session ID
+- **Target metadata**: attack type, target IP/port, CVE IDs, credentials
+- **Bridge relationships**: `FOUND_ON` → target IP/Subdomain, `FINDING_RELATES_CVE` → CVE
+- **Step-level bridges**: `STEP_TARGETED` → IP, `STEP_EXPLOITED` → CVE
+
+This replaces the old `exploit_writer.py` module entirely. The exploit success is now part of the attack chain graph rather than a disconnected standalone node.
+
+### Cross-Session Evolutionary Memory
+
+When a new session starts, the orchestrator calls `query_prior_chains()` which loads up to 5 most recent completed/aborted chains for the same user and project. For each chain:
+
+- **Metadata**: title, objective, status, attack path type, step counts, phases reached
+- **High-severity findings**: only critical and high findings (to limit token usage)
+- **Failure lessons**: lesson_learned from each ChainFailure
+
+This is formatted by `format_prior_chains()` and injected into the `{prior_chain_history}` placeholder. The agent in session B knows what session A tried, what worked, and what failed — enabling it to **build on prior work rather than repeating mistakes**.
+
+### Semantic Chain Context
+
+The `{chain_context}` placeholder in the system prompt is built by `format_chain_context()` from the three in-memory lists. It replaces the old flat execution trace with a structured, signal-first format:
+
+| Section | Content | Purpose |
+|---------|---------|---------|
+| **Findings** | `[SEVERITY] title (step N)` for each accumulated finding | Instant signal — what has been discovered |
+| **Failed Attempts** | `[step N] failure_type: error_message / Lesson: ...` | What to avoid — lessons from failures |
+| **Decisions** | `[step N] decision_type: from → to (approved/rejected)` | Session trajectory — strategic turns |
+| **Recent Steps** | Last 5 steps in compact form (tool, args, result) | Operational context — what just happened |
+
+Compared to the old flat trace:
+
+| Aspect | Old Flat Trace | New Chain Context |
+|--------|---------------|-------------------|
+| **Structure** | Every step formatted identically | Three semantic sections + recent steps |
+| **Signal** | LLM must scan ALL steps to find what matters | Key findings at the top, severity-tagged |
+| **Failures** | Just a step with `success: false` buried chronologically | Separate section with `lesson_learned` |
+| **Decisions** | Phase transitions look like regular steps | Explicit section showing who approved what |
+| **Scale** | Grows linearly with step count (30 steps = huge prompt) | Findings/failures/decisions stay concise; only recent steps expand |
+
+---
+
 ## Security & Multi-Tenancy
 
 ### Tenant Isolation
@@ -1290,12 +1610,18 @@ flowchart TB
 
 ## Prompt Token Optimization
 
-### Compact Execution Trace
+### Chain Context (replaces Compact Execution Trace)
 
-To reduce token usage as sessions grow longer, the execution trace formatter uses a **compact/full** split:
+The legacy flat `format_execution_trace()` has been replaced by `format_chain_context()`, which injects structured attack chain memory into the system prompt via the `{chain_context}` placeholder. See the [EvoGraph — Semantic Chain Context](#semantic-chain-context) section for the full format.
 
-- **Recent steps** (last 5): Full formatting with complete tool output and analysis — essential for exploitation workflows where the agent must reference previous search/info results.
-- **Older steps**: Compact formatting — tool output is omitted, args truncated to 200 chars, analysis truncated to 1,000 chars. The agent retains awareness of what happened without consuming excessive tokens.
+The new format puts **signal up front** rather than burying it in a chronological wall of text:
+
+1. **Findings** — accumulated `ChainFinding` entries (severity, title, step number) listed first for instant signal
+2. **Failed Attempts** — accumulated `ChainFailure` entries with `lesson_learned` so the LLM avoids repeating mistakes
+3. **Decisions** — accumulated `ChainDecision` entries for context on the session's trajectory
+4. **Recent Steps** — only the last 5 execution steps in compact form, with the most recent including full tool output
+
+This scales as O(findings + failures + decisions + N) rather than O(total_steps), keeping the prompt size bounded while preserving the most valuable context. Cross-session context is injected separately via `{prior_chain_history}`, loaded once at session init.
 
 ### Conditional Prompt Injection
 
@@ -1545,3 +1871,4 @@ The RedAmon Agentic System provides:
 16. **Database-Driven Configuration** - All settings fetched from PostgreSQL via webapp API, with standalone defaults fallback
 17. **Custom Phase Prompts** - Per-phase system prompt injection for project-specific agent behavior
 18. **MCP Retry Logic** - Exponential backoff retry for MCP server connections to handle container startup races
+19. **EvoGraph** - Persistent evolutionary attack chain graph in Neo4j tracking every step, finding, decision, and failure. Dual memory architecture (in-memory for speed, Neo4j for persistence) with bridge relationships to the recon graph and cross-session evolutionary learning

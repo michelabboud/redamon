@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.0] - 2026-02-22
+
+### Added
+
+- **Project Export & Import** — full project portability via ZIP archives:
+  - Export (`GET /api/projects/{id}/export`): streams a ZIP containing project settings, conversation history, Neo4j graph data (nodes + relationships with stable `_exportId` UUIDs), and recon/GVM/GitHub Hunt artifact files
+  - Import (`POST /api/projects/import`): restores a project from ZIP under a specified user with domain/subdomain conflict validation, constraint-aware Neo4j import (MERGE for unique-constrained labels, CREATE for unconstrained via APOC), and conversation session ID deduplication
+  - Import modal with drag-to-select file picker on the Projects page; Export button on Project Settings page
+- **EvoGraph — Dynamic Attack Chain Visualization** — real-time evolutionary graph that updates as agent sessions progress with attack chains:
+  - New `chain_graph_writer.py` module replacing the legacy `exploit_writer.py`
+  - Five new Neo4j node types: `AttackChain` (session root), `ChainStep` (tool execution), `ChainFinding` (discovered vulnerability/credential/info), `ChainDecision` (phase transition), `ChainFailure` (error/dead-end)
+  - Rich relationship model: `CHAIN_TARGETS`, `HAS_STEP`, `NEXT_STEP`, `LED_TO`, `DECISION_PRECEDED`, `PRODUCED`, `FAILED_WITH`, plus bridge relationships to the recon graph (`STEP_TARGETED`, `STEP_EXPLOITED`, `STEP_IDENTIFIED`, `FOUND_ON`, `FINDING_RELATES_CVE`)
+  - Visual differentiation on the graph canvas: inactive session chains render grey (orange when selected), active session ring pulses yellow, chain flow particles are static grey
+  - Cross-session awareness via `query_prior_chains()`: the agent knows what has already been tried in previous sessions
+  - All graph writes are async fire-and-forget (never block the orchestrator loop)
+- **Multi-Session System** — parallel attack sessions with full concurrency support:
+  - Multiple independent agent sessions per project, each with its own WebSocket connection keyed by `user_id:project_id:session_id`
+  - Per-session guidance queues and streaming callbacks (dicts keyed by `session_id`) preventing cross-session interference
+  - Central task registry (`_active_tasks`) that survives WebSocket reconnection — agents keep running in the background when users disconnect or switch conversations
+  - Connection replacement on reconnect: transfers running task, stop state, and guidance queue seamlessly
+  - Metasploit prewarm per session key
+- **Chat Persistence & Conversation History** — full message durability and session management:
+  - Ordered `asyncio.Queue` + single background worker replacing fire-and-forget `asyncio.create_task()`, ensuring messages are saved with correct `sequenceNum`
+  - All message types persisted: thinking, tool_start/complete (with raw output), phase updates, approval/question requests, responses, errors, todos
+  - Conversation CRUD API routes: list, get with messages, lookup by session, update, delete
+  - ConversationHistory panel in AI Assistant drawer with session title, status badge, phase indicator, iteration count, relative timestamps, and live "agent running" pulsing dot
+  - Full state restoration when loading a conversation: chat items, todo lists, pending approval/question state, phase, iteration count
+- **Per-Session Graph Controls** — granular visibility management for attack chains on the graph:
+  - "Show only this session in graph" toggle button in AI drawer header
+  - Sessions popup in the bottom bar with per-chain ON/OFF toggles, plus "All" / "None" bulk controls
+  - Session badge showing `visible/total` count
+  - Session title display (user's initial message truncated to 30 chars) instead of session ID codes
+- **Data Table View** — alternative tabular visualization of the attack surface graph:
+  - Graph Map / Data Table view tabs with Lucide icons
+  - `@tanstack/react-table` powered table with columns: Type (color-coded), Name, Properties count, In/Out connections, L2/L3 hop counts
+  - Global text filter, client-side sorting on all columns, row expansion with full property display
+  - Pagination (10/25/50/100 per page) and XLSX Excel export
+- **User Selector in Global Header** — switch between users directly from the top bar without navigating away, with two-letter avatar initials, dropdown user list, and "Manage Users" link
+- **OpenAI-Compatible Provider** — fifth AI provider supporting any OpenAI API-compatible endpoint (Ollama, LM Studio, vLLM, local proxies) via `OPENAI_COMPAT_BASE_URL` and `OPENAI_COMPAT_API_KEY` env vars, with `openai_compat/` prefix convention for model detection
+- **Unclassified Attack Paths** — agent orchestrator now supports attack paths that don't fit the CVE Exploit or Hydra Brute Force categories, with dedicated prompts in `unclassified_prompts.py`
+- **GitHub Wiki** — 13-page documentation wiki covering getting started, user management, project creation, graph dashboard, reconnaissance, GVM scanning, GitHub secret hunting, AI agent guide, project settings reference, AI model providers, attack surface graph, data export/import, and troubleshooting
+
+### Changed
+
+- **Agent Orchestrator** — major refactoring: per-session dictionaries for guidance queues and streaming callbacks, central task registry for connection-resilient background tasks, dynamic connection resolution via `ws_manager`
+- **Graph Canvas** — new node types (ChainFinding, ChainDecision, ChainFailure) with distinct visual styling, session-aware coloring and particle rendering
+- **Graph API** — expanded to return attack chain data with session-level grouping
+- **PageBottomBar** — redesigned with session visibility controls, view-mode awareness, and session title display
+- **UI Theme Hierarchy** — light mode background layers reorganized (white → gray-50 → gray-100 → gray-200 → gray-300), added `--bg-quaternary` token
+- **Global Header** — navigation tabs (Projects/Red Zone) moved to right side, Graph Map/Data Table view tabs added, AI Agent button restyled to crimson, user selector added
+- **Node Drawer** — styling improvements, new chain node type support
+- **Target Section** — domain, subdomains, and root domain toggle locked in edit mode to prevent graph data inconsistency
+- **README** — comprehensive rewrite reflecting v2.0 features
+
+### Removed
+
+- **`exploit_writer.py`** — replaced by `chain_graph_writer.py` with full EvoGraph support
+- **`README.METASPLOIT.GUIDE.md`** — removed from agentic module
+
+### Fixed
+
+- **Race condition in chat message persistence** — fire-and-forget `asyncio.create_task()` caused messages to be saved with incorrect `sequenceNum`; replaced with ordered queue + single background worker
+- **Race condition in concurrent sessions** — `_guidance_queue` and `_streaming_callback` were single instance variables overwritten by each new session; changed to per-session dictionaries keyed by `session_id`
+
+---
+
 ## [1.3.0] - 2026-02-19
 
 ### Added

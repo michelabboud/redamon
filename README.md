@@ -187,6 +187,7 @@ No rebuild needed — just restart.
   - [GitHub Secret Hunter](#github-secret-hunter)
   - [GVM Vulnerability Scanner](#gvm-vulnerability-scanner-optional)
   - [Attack Surface Graph](#attack-surface-graph)
+  - [EvoGraph — Attack Chain Evolution](#evograph--attack-chain-evolution)
   - [Project Settings](#project-settings)
 - [System Architecture](#system-architecture)
   - [High-Level Architecture](#high-level-architecture)
@@ -224,13 +225,14 @@ No rebuild needed — just restart.
 
 RedAmon is a modular, containerized penetration testing framework that chains automated reconnaissance, AI-driven exploitation, and graph-powered intelligence into a single, end-to-end offensive security pipeline. Every component runs inside Docker — no tools installed on your host — and communicates through well-defined APIs so each layer can evolve independently.
 
-The platform is built around four pillars:
+The platform is built around five pillars:
 
 | Pillar | What it does |
 |--------|-------------|
 | **Reconnaissance Pipeline** | Six sequential scanning phases that map your target's entire attack surface — from subdomain discovery to vulnerability detection — and store the results as a rich, queryable graph. Complemented by standalone GVM network scanning and GitHub secret hunting modules. |
 | **AI Agent Orchestrator** | A LangGraph-based autonomous agent that reasons about the graph, selects security tools via MCP, transitions through informational / exploitation / post-exploitation phases, and can be steered in real-time via chat. |
 | **Attack Surface Graph** | A Neo4j knowledge graph with 17 node types and 20+ relationship types that serves as the single source of truth for every finding — and the primary data source the AI agent queries before every decision. |
+| **EvoGraph** | A persistent, evolutionary attack chain graph in Neo4j that tracks every step, finding, decision, and failure across the attack lifecycle — bridging the recon graph and enabling cross-session intelligence accumulation. |
 | **Project Settings Engine** | 180+ per-project parameters — exposed through the webapp UI — that control every tool's behavior, from Naabu thread counts to Nuclei severity filters to agent approval gates. |
 
 ---
@@ -380,7 +382,7 @@ The agent progresses through three distinct operational phases, each with differ
 - **Hydra Brute Force** — the agent uses THC Hydra to brute force credentials against services like SSH, FTP, RDP, SMB, MySQL, HTTP forms, and 50+ other protocols. Hydra settings (threads, timeouts, extra checks) are fully configurable per project. After credentials are discovered, the agent establishes access via `sshpass`, database clients, or Metasploit psexec.
 - **Unclassified Fallback** — for techniques that don't match CVE exploit or brute force (e.g., SQL injection, XSS, SSRF, file upload). The agent dynamically classifies the attack type and uses available tools generically without a mandatory workflow. These appear with a grey badge and a `-unclassified` suffix in the classification.
 
-When an exploit succeeds, the agent automatically creates an **Exploit node** in the Neo4j graph — recording the attack type, target IP, port, CVE IDs, Metasploit module used, payload, session ID, and any credentials discovered. This node is linked to the targeted IP, the exploited CVE, and the entry port, making every successful compromise a permanent, queryable part of the attack surface graph.
+When an exploit succeeds, the agent records a **ChainFinding(exploit_success)** in the [EvoGraph](#evograph--attack-chain-evolution) — recording the attack type, target IP, port, CVE IDs, Metasploit module, payload, session ID, and credentials discovered. This finding is linked to the attack chain step that produced it and bridged to the targeted IP and exploited CVE in the recon graph, making every successful compromise a permanent, queryable, and cross-session-accessible part of the knowledge graph.
 
 <p align="center">
   <img src="assets/exploit.gif" alt="RedAmon Exploitation Demo" width="100%"/>
@@ -595,7 +597,7 @@ The Neo4j graph database is the **single source of truth** for every finding in 
 
 #### Node Types
 
-The graph contains **17 node types** organized into four categories:
+The graph contains **17 recon node types** organized into four categories, plus **5 EvoGraph attack chain node types** (see [EvoGraph](#evograph--attack-chain-evolution) below):
 
 **Infrastructure Nodes** — represent the network topology:
 
@@ -632,7 +634,7 @@ The graph contains **17 node types** organized into four categories:
 | **CVE** | id, cvss, severity (uppercase), description, published | Known vulnerability from NVD |
 | **MitreData** | cve_id, cwe_id, cwe_name, abstraction | CWE weakness mapping |
 | **Capec** | capec_id, name, likelihood, severity, execution_flow | Common attack pattern |
-| **Exploit** | attack_type, target_ip, session_id, cve_ids, metasploit_module | Agent-created successful exploitation record |
+| **ChainFinding** | finding_type, severity, title, evidence, confidence | EvoGraph: agent discovery (replaces legacy Exploit node) — see [EvoGraph](#evograph--attack-chain-evolution) |
 
 #### Relationship Chain
 
@@ -655,9 +657,14 @@ flowchart TB
     MitreData -->|HAS_CAPEC| Capec
     Vulnerability -->|FOUND_AT| Endpoint
     Vulnerability -->|AFFECTS_PARAMETER| Parameter
-    Exploit -->|EXPLOITED_CVE| CVE
-    Exploit -->|TARGETED_IP| IP
-    Exploit --> Vulnerability
+
+    AttackChain -->|HAS_STEP| ChainStep
+    ChainStep -->|PRODUCED| ChainFinding
+    AttackChain -.->|CHAIN_TARGETS| IP
+    ChainStep -.->|STEP_TARGETED| IP
+    ChainStep -.->|STEP_EXPLOITED| CVE
+    ChainFinding -.->|FOUND_ON| IP
+    ChainFinding -.->|FINDING_RELATES_CVE| CVE
 
     style Domain fill:#1a365d,color:#fff
     style Subdomain fill:#1a365d,color:#fff
@@ -673,7 +680,9 @@ flowchart TB
     style Vulnerability fill:#742a2a,color:#fff
     style MitreData fill:#744210,color:#fff
     style Capec fill:#744210,color:#fff
-    style Exploit fill:#7b341e,color:#fff
+    style AttackChain fill:#553300,color:#fff
+    style ChainStep fill:#553300,color:#fff
+    style ChainFinding fill:#553300,color:#fff
 ```
 
 Vulnerabilities connect differently depending on their source:
@@ -689,9 +698,45 @@ Before the agent takes any offensive action, it queries the graph to build situa
 2. **Technology-CVE correlation** — traverses Technology → CVE relationships to find which detected software versions have known vulnerabilities, prioritizing by CVSS score.
 3. **Injectable parameter discovery** — queries Parameter nodes flagged as `is_injectable: true` by Nuclei to identify confirmed injection points.
 4. **Exploit feasibility assessment** — cross-references open ports, running services, and known CVEs to determine which Metasploit modules are likely to succeed.
-5. **Post-exploitation context** — after a successful exploit, the agent creates an Exploit node linked to the target IP, CVE, and port, so subsequent queries can reference what's already been compromised.
+5. **Post-exploitation context** — after a successful exploit, the agent creates a `ChainFinding(exploit_success)` in the [EvoGraph](#evograph--attack-chain-evolution), bridged to the target IP and CVE in the recon graph, so subsequent sessions can reference what's already been compromised.
 
 All queries are automatically scoped to the current user and project via regex-based tenant filter injection — the agent never generates tenant filters itself, preventing accidental cross-project data access.
+
+---
+
+### EvoGraph — Attack Chain Evolution
+
+Running parallel to the recon graph, **EvoGraph** (Evolutive Attack Chain Graph) is a persistent, evolutionary graph that tracks everything the AI agent does during exploitation sessions. While the recon graph captures *what exists*, EvoGraph captures *what was tried, what was discovered, what failed, and what decisions were made* — across the entire attack lifecycle.
+
+#### Five Node Types
+
+| Node | Purpose |
+|------|---------|
+| **AttackChain** | Root of an attack chain — maps 1:1 to a chat session (objective, target, status, outcome) |
+| **ChainStep** | Each tool execution — tool name, arguments, output analysis, success/failure |
+| **ChainFinding** | Intelligence discovered during a step — vulnerabilities confirmed, credentials found, exploit successes |
+| **ChainDecision** | Strategic decision points — phase transitions, strategy changes, user approvals/rejections |
+| **ChainFailure** | Structured record of what was tried and why it failed, with lessons learned |
+
+#### Bridge Relationships
+
+EvoGraph nodes connect back to the recon graph through typed bridge relationships:
+
+- **CHAIN_TARGETS** — links an AttackChain to its target IP, Subdomain, Port, or CVE in the recon graph
+- **STEP_TARGETED / STEP_EXPLOITED** — links individual steps to the infrastructure they acted on or the CVE they exploited
+- **FOUND_ON / FINDING_RELATES_CVE** — links findings to where they were discovered and which CVEs they relate to
+
+This unification means a single Neo4j query can traverse from a recon graph node (e.g., an IP address) through all attack chains that targeted it, every finding discovered, and every failure encountered.
+
+#### Cross-Session Learning
+
+When a new session starts, the agent loads prior completed chains from Neo4j — including high-severity findings and failure lessons — giving it awareness of what has already been tried. This transforms the agent from a stateless tool executor into a **knowledge-accumulating system** that builds on prior work across sessions.
+
+#### Dual Memory Architecture
+
+EvoGraph uses a dual-recording pattern — every event is written to both **in-memory lists** (for instant LLM context via `format_chain_context()`) and **Neo4j** (for persistent cross-session queries via `query_prior_chains()`). The in-memory working memory never depends on graph availability, ensuring zero-latency agent reasoning.
+
+> **Deep dive:** See the [Agentic System Documentation](agentic/README.AGENTIC.md#evograph--evolutive-attack-chain-graph) for full node taxonomy, relationship diagrams, dual memory architecture, orchestrator integration, and the complete comparison of the old flat execution trace vs. the new semantic chain context.
 
 ---
 
