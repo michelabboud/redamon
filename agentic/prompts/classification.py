@@ -33,6 +33,7 @@ ATTACK_PATH_CLASSIFICATION_PROMPT = """You are classifying a penetration testing
   - "Brute force SSH"
   - "Try to crack the password"
   - "Pwn the target"
+  - "Try SQL injection on the web app"
 
 ## Attack Path Types (ONLY for exploitation phase)
 
@@ -64,6 +65,20 @@ ATTACK_PATH_CLASSIFICATION_PROMPT = """You are classifying a penetration testing
   - "Try default credentials on PostgreSQL"
   - "Try to get access to SSH guessing password"
 
+### <descriptive_term>-unclassified
+- ANY exploitation request that does NOT clearly fit cve_exploit or brute_force_credential_guess
+- The agent has no specialized workflow for these — it will use available tools generically
+- You MUST create a short, descriptive snake_case term followed by "-unclassified"
+- Format: `<term>-unclassified` where term is 1-4 lowercase words joined by underscores
+- Example values: "sql_injection-unclassified", "dos_attack-unclassified", "ssrf-unclassified", "xss-unclassified", "file_upload-unclassified", "command_injection-unclassified", "directory_traversal-unclassified"
+- Keywords: SQL injection, XSS, cross-site scripting, directory traversal, path traversal, DoS, denial of service, SSRF, file upload, command injection, LFI, RFI, deserialization, XXE, privilege escalation
+- Example requests:
+  - "Try SQL injection on the web app" -> "sql_injection-unclassified"
+  - "Test for SSRF on the API" -> "ssrf-unclassified"
+  - "Try to upload a web shell" -> "file_upload-unclassified"
+  - "Test for XSS on the login page" -> "xss-unclassified"
+  - "Attempt directory traversal" -> "directory_traversal-unclassified"
+
 ## User Request
 {objective}
 
@@ -75,30 +90,41 @@ Classify the user's request:
    - Is this an active attack/exploitation request? -> "exploitation"
 
 2. If exploitation, determine the ATTACK PATH TYPE:
-   - Does the request mention a CVE or specific vulnerability? -> "cve_exploit"
+   - Does the request mention a CVE or specific vulnerability ID? -> "cve_exploit"
    - Does the request mention password guessing, brute force, or credential attacks? -> "brute_force_credential_guess"
    - Does the request target a login service (SSH, FTP, MySQL, etc.) with credential-based attack? -> "brute_force_credential_guess"
    - Does the request mention exploit modules or payloads? -> "cve_exploit"
    - Does the request mention wordlists or dictionaries? -> "brute_force_credential_guess"
-   - Default to "cve_exploit" if unclear
+   - Does the request describe a specific attack technique (SQLi, XSS, SSRF, DoS, file upload, etc.) that doesn't fit cve_exploit or brute_force? -> "<descriptive_term>-unclassified"
+   - Default to "cve_exploit" if truly unclear (e.g., vague "hack the target")
 
 3. If informational, set attack_path_type to "cve_exploit" (default, won't be used)
+
+4. Extract TARGET HINTS from the request (best-effort, used for graph linking):
+   - target_host: IP address or hostname mentioned (e.g., "10.0.0.5", "www.example.com"). null if none found.
+   - target_port: port number mentioned (e.g., 8080, 443). null if none found.
+   - target_cves: list of CVE IDs mentioned (e.g., ["CVE-2021-41773"]). Empty list if none found.
 
 Output valid JSON matching this schema:
 
 ```json
 {{
   "required_phase": "informational" | "exploitation",
-  "attack_path_type": "cve_exploit" | "brute_force_credential_guess",
+  "attack_path_type": "cve_exploit" | "brute_force_credential_guess" | "<descriptive_term>-unclassified",
   "confidence": 0.0-1.0,
   "reasoning": "Brief explanation of the classification",
-  "detected_service": "ssh" | "ftp" | "mysql" | "mssql" | "postgres" | "smb" | "rdp" | "vnc" | "telnet" | "tomcat" | "http" | null
+  "detected_service": "ssh" | "ftp" | "mysql" | "mssql" | "postgres" | "smb" | "rdp" | "vnc" | "telnet" | "tomcat" | "http" | null,
+  "target_host": "10.0.0.5" | "www.example.com" | null,
+  "target_port": 8080 | null,
+  "target_cves": ["CVE-2021-41773"] | []
 }}
 ```
 
 Notes:
 - `required_phase` determines if this is reconnaissance ("informational") or active attack ("exploitation")
 - `attack_path_type` is only relevant when required_phase is "exploitation"
+- For unclassified paths, the term MUST be lowercase snake_case followed by "-unclassified" (e.g., "sql_injection-unclassified")
 - `detected_service` should only be set for brute_force_credential_guess, null otherwise
 - `confidence` should be 0.9+ if the intent is very clear, 0.6-0.8 if somewhat ambiguous
+- `target_host`, `target_port`, `target_cves` are best-effort extraction — null/empty if not mentioned
 """

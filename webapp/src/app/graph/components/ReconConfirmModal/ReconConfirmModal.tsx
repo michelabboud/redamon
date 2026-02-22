@@ -1,6 +1,6 @@
 'use client'
 
-import { AlertTriangle, Play, Loader2 } from 'lucide-react'
+import { AlertTriangle, ShieldAlert, Play, Loader2 } from 'lucide-react'
 import { Modal } from '@/components/ui'
 import styles from './ReconConfirmModal.module.css'
 
@@ -45,6 +45,20 @@ export function ReconConfirmModal({
           <p className={styles.projectInfo}>
             <strong>Target:</strong> {targetDomain}
           </p>
+        </div>
+
+        <div className={styles.disclaimer}>
+          <ShieldAlert size={18} className={styles.disclaimerIcon} />
+          <div className={styles.disclaimerContent}>
+            <p className={styles.disclaimerTitle}>Authorization Required</p>
+            <p className={styles.disclaimerText}>
+              Reconnaissance actively scans and probes the target system. This operation
+              may trigger security alerts and can be considered intrusive.
+              By proceeding, you confirm that you <strong>own the target</strong> or have{' '}
+              <strong>explicit written permission</strong> from the owner to perform this scan.
+              Unauthorized scanning is illegal and may result in criminal penalties.
+            </p>
+          </div>
         </div>
 
         {hasExistingData ? (

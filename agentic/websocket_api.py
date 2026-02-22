@@ -249,6 +249,11 @@ class StreamingCallback:
 
     Also persists messages to the webapp database via chat_persistence.
     Uses dynamic connection resolution so reconnecting users see live updates.
+
+    Persistence uses an ordered asyncio.Queue so messages are saved
+    sequentially in the exact order they were emitted — preventing the
+    race condition where concurrent HTTP POSTs arrive out-of-order and
+    get wrong sequenceNum values.
     """
 
     def __init__(self, connection: WebSocketConnection, ws_manager: Optional['WebSocketManager'] = None):
@@ -263,6 +268,38 @@ class StreamingCallback:
         self._response_sent = False
         # Accumulate tool output per tool_name so tool_complete includes raw output
         self._tool_context: dict = {}  # tool_name -> {"args": dict, "chunks": list[str]}
+        # Ordered persistence queue — messages are saved one-at-a-time in FIFO order
+        self._persist_queue: asyncio.Queue = asyncio.Queue()
+        self._persist_worker_task: Optional[asyncio.Task] = None
+
+    def _ensure_persist_worker(self):
+        """Lazily start the background persist worker."""
+        if self._persist_worker_task is None or self._persist_worker_task.done():
+            self._persist_worker_task = asyncio.create_task(self._persist_worker())
+
+    async def _persist_worker(self):
+        """Process persist messages sequentially to guarantee ordering."""
+        while True:
+            msg_type, data = await self._persist_queue.get()
+            try:
+                await save_chat_message(
+                    session_id=self._session_id,
+                    msg_type=msg_type,
+                    data=data,
+                    project_id=self._project_id,
+                    user_id=self._user_id,
+                )
+            except Exception as e:
+                logger.warning(f"Persist worker error: {e}")
+            finally:
+                self._persist_queue.task_done()
+
+    async def drain_persist_queue(self):
+        """Wait for all pending persist messages to be saved, then stop the worker."""
+        if self._persist_queue.qsize() > 0:
+            await self._persist_queue.join()
+        if self._persist_worker_task and not self._persist_worker_task.done():
+            self._persist_worker_task.cancel()
 
     @property
     def connection(self) -> WebSocketConnection:
@@ -274,14 +311,9 @@ class StreamingCallback:
         return self._original_connection
 
     def _persist(self, msg_type: str, data: dict):
-        """Fire-and-forget persistence to DB."""
-        asyncio.create_task(save_chat_message(
-            session_id=self._session_id,
-            msg_type=msg_type,
-            data=data,
-            project_id=self._project_id,
-            user_id=self._user_id,
-        ))
+        """Enqueue message for ordered persistence to DB."""
+        self._ensure_persist_worker()
+        self._persist_queue.put_nowait((msg_type, data))
 
     async def on_thinking(self, iteration: int, phase: str, thought: str, reasoning: str):
         """Called when agent starts thinking"""
@@ -495,14 +527,9 @@ class WebSocketHandler:
             # Mark agent as running in DB
             asyncio.create_task(update_conversation(connection.session_id, {"agentRunning": True}))
 
-            # Persist the user message
-            asyncio.create_task(save_chat_message(
-                session_id=connection.session_id,
-                msg_type="user_message",
-                data={"content": query_msg.question},
-                project_id=connection.project_id,
-                user_id=connection.user_id,
-            ))
+            # Persist the user message via the callback's ordered queue so it
+            # gets a sequenceNum *before* any thinking/tool messages
+            callback._persist("user_message", {"content": query_msg.question})
 
             # Run orchestrator as background task so receive loop stays free
             task = asyncio.create_task(
@@ -542,6 +569,8 @@ class WebSocketHandler:
             except Exception:
                 pass
         finally:
+            # Drain the persist queue so all messages are saved before marking agent as done
+            await callback.drain_persist_queue()
             connection._active_task = None
             self.ws_manager.clear_task(connection.get_key())
             asyncio.create_task(update_conversation(connection.session_id, {"agentRunning": False}))
@@ -603,6 +632,7 @@ class WebSocketHandler:
             except Exception:
                 pass
         finally:
+            await callback.drain_persist_queue()
             connection._active_task = None
             self.ws_manager.clear_task(connection.get_key())
             asyncio.create_task(update_conversation(connection.session_id, {"agentRunning": False}))
@@ -663,6 +693,7 @@ class WebSocketHandler:
             except Exception:
                 pass
         finally:
+            await callback.drain_persist_queue()
             connection._active_task = None
             self.ws_manager.clear_task(connection.get_key())
             asyncio.create_task(update_conversation(connection.session_id, {"agentRunning": False}))
@@ -799,6 +830,7 @@ class WebSocketHandler:
             except Exception:
                 pass
         finally:
+            await callback.drain_persist_queue()
             connection._active_task = None
             self.ws_manager.clear_task(connection.get_key())
             asyncio.create_task(update_conversation(connection.session_id, {"agentRunning": False}))

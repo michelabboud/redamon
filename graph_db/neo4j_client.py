@@ -295,6 +295,12 @@ class Neo4jClient:
             "CREATE CONSTRAINT githubpath_unique IF NOT EXISTS FOR (gp:GithubPath) REQUIRE gp.id IS UNIQUE",
             "CREATE CONSTRAINT githubsecret_unique IF NOT EXISTS FOR (gs:GithubSecret) REQUIRE gs.id IS UNIQUE",
             "CREATE CONSTRAINT githubsensitivefile_unique IF NOT EXISTS FOR (gsf:GithubSensitiveFile) REQUIRE gsf.id IS UNIQUE",
+            # Attack Chain Graph constraints
+            "CREATE CONSTRAINT attack_chain_id IF NOT EXISTS FOR (ac:AttackChain) REQUIRE ac.chain_id IS UNIQUE",
+            "CREATE CONSTRAINT chain_step_id IF NOT EXISTS FOR (s:ChainStep) REQUIRE s.step_id IS UNIQUE",
+            "CREATE CONSTRAINT chain_finding_id IF NOT EXISTS FOR (f:ChainFinding) REQUIRE f.finding_id IS UNIQUE",
+            "CREATE CONSTRAINT chain_decision_id IF NOT EXISTS FOR (d:ChainDecision) REQUIRE d.decision_id IS UNIQUE",
+            "CREATE CONSTRAINT chain_failure_id IF NOT EXISTS FOR (fl:ChainFailure) REQUIRE fl.failure_id IS UNIQUE",
         ]
 
         # Tenant composite indexes
@@ -318,6 +324,12 @@ class Neo4jClient:
             "CREATE INDEX idx_githubpath_tenant IF NOT EXISTS FOR (gp:GithubPath) ON (gp.user_id, gp.project_id)",
             "CREATE INDEX idx_githubsecret_tenant IF NOT EXISTS FOR (gs:GithubSecret) ON (gs.user_id, gs.project_id)",
             "CREATE INDEX idx_githubsensitivefile_tenant IF NOT EXISTS FOR (gsf:GithubSensitiveFile) ON (gsf.user_id, gsf.project_id)",
+            # Attack Chain Graph tenant indexes
+            "CREATE INDEX idx_attackchain_tenant IF NOT EXISTS FOR (ac:AttackChain) ON (ac.user_id, ac.project_id)",
+            "CREATE INDEX idx_chainstep_tenant IF NOT EXISTS FOR (s:ChainStep) ON (s.user_id, s.project_id)",
+            "CREATE INDEX idx_chainfinding_tenant IF NOT EXISTS FOR (f:ChainFinding) ON (f.user_id, f.project_id)",
+            "CREATE INDEX idx_chaindecision_tenant IF NOT EXISTS FOR (d:ChainDecision) ON (d.user_id, d.project_id)",
+            "CREATE INDEX idx_chainfailure_tenant IF NOT EXISTS FOR (fl:ChainFailure) ON (fl.user_id, fl.project_id)",
         ]
 
         # Additional indexes
@@ -348,6 +360,12 @@ class Neo4jClient:
             "CREATE INDEX idx_githubrepo_name IF NOT EXISTS FOR (gr:GithubRepository) ON (gr.name)",
             "CREATE INDEX idx_githubpath_path IF NOT EXISTS FOR (gp:GithubPath) ON (gp.path)",
             "CREATE INDEX idx_githubsecret_secret_type IF NOT EXISTS FOR (gs:GithubSecret) ON (gs.secret_type)",
+            # Attack Chain Graph functional indexes
+            "CREATE INDEX idx_chainstep_chain IF NOT EXISTS FOR (s:ChainStep) ON (s.chain_id)",
+            "CREATE INDEX idx_chainfinding_type IF NOT EXISTS FOR (f:ChainFinding) ON (f.finding_type)",
+            "CREATE INDEX idx_chainfinding_severity IF NOT EXISTS FOR (f:ChainFinding) ON (f.severity)",
+            "CREATE INDEX idx_chainfailure_type IF NOT EXISTS FOR (fl:ChainFailure) ON (fl.failure_type)",
+            "CREATE INDEX idx_attackchain_status IF NOT EXISTS FOR (ac:AttackChain) ON (ac.status)",
         ]
 
         for query in constraints + tenant_indexes + additional_indexes:

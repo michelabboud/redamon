@@ -8,8 +8,8 @@
 
 'use client'
 
-import { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, Sparkles, Plus, Shield, Target, Zap, HelpCircle, WifiOff, Wifi, Square, Play, Download, Wrench, History } from 'lucide-react'
+import React, { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react'
+import { Send, Bot, User, Loader2, AlertCircle, Sparkles, Plus, Shield, ShieldAlert, Target, Zap, HelpCircle, WifiOff, Wifi, Square, Play, Download, Wrench, History, ChevronDown, EyeOff, Eye } from 'lucide-react'
 import { StealthIcon } from '@/components/icons/StealthIcon'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -80,14 +80,18 @@ interface AIAssistantDrawerProps {
   toolPhaseMap?: Record<string, string[]>
   stealthMode?: boolean
   onToggleStealth?: (newValue: boolean) => void
+  onRefetchGraph?: () => void
+  isOtherChainsHidden?: boolean
+  onToggleOtherChains?: () => void
+  hasOtherChains?: boolean
 }
 
 const PHASE_CONFIG = {
   informational: {
     label: 'Informational',
     icon: Shield,
-    color: 'var(--accent-primary)',
-    bgColor: 'rgba(59, 130, 246, 0.1)',
+    color: '#059669',
+    bgColor: 'rgba(5, 150, 105, 0.1)',
   },
   exploitation: {
     label: 'Exploitation',
@@ -103,9 +107,7 @@ const PHASE_CONFIG = {
   },
 }
 
-type AttackPathType = 'cve_exploit' | 'brute_force_credential_guess'
-
-const ATTACK_PATH_CONFIG = {
+const KNOWN_ATTACK_PATH_CONFIG: Record<string, { label: string; shortLabel: string; color: string; bgColor: string }> = {
   cve_exploit: {
     label: 'CVE Exploit',
     shortLabel: 'CVE',
@@ -120,6 +122,27 @@ const ATTACK_PATH_CONFIG = {
   },
 }
 
+/** Derive display config for any attack path type (known or unclassified). */
+function getAttackPathConfig(type: string): { label: string; shortLabel: string; color: string; bgColor: string } {
+  if (KNOWN_ATTACK_PATH_CONFIG[type]) {
+    return KNOWN_ATTACK_PATH_CONFIG[type]
+  }
+  // Unclassified: derive label from the type string
+  // e.g. "sql_injection-unclassified" -> label "Sql Injection", shortLabel "SI"
+  const cleanName = type.replace(/-unclassified$/, '').replace(/_/g, ' ')
+  const words = cleanName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1))
+  const label = words.join(' ')
+  const shortLabel = words.length === 1
+    ? label.slice(0, 5).toUpperCase()
+    : words.map(w => w[0]).join('').toUpperCase()
+  return {
+    label: `${label} (Unclassified)`,
+    shortLabel,
+    color: 'var(--text-secondary, #6b7280)',
+    bgColor: 'rgba(107, 114, 128, 0.15)',
+  }
+}
+
 export function AIAssistantDrawer({
   isOpen,
   onClose,
@@ -132,13 +155,17 @@ export function AIAssistantDrawer({
   toolPhaseMap,
   stealthMode = false,
   onToggleStealth,
+  onRefetchGraph,
+  isOtherChainsHidden = false,
+  onToggleOtherChains,
+  hasOtherChains = false,
 }: AIAssistantDrawerProps) {
   const [chatItems, setChatItems] = useState<ChatItem[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isStopped, setIsStopped] = useState(false)
   const [currentPhase, setCurrentPhase] = useState<Phase>('informational')
-  const [attackPathType, setAttackPathType] = useState<AttackPathType>('cve_exploit')
+  const [attackPathType, setAttackPathType] = useState<string>('cve_exploit')
   const [iterationCount, setIterationCount] = useState(0)
   const [awaitingApproval, setAwaitingApproval] = useState(false)
   const [approvalRequest, setApprovalRequest] = useState<ApprovalRequestPayload | null>(null)
@@ -155,6 +182,9 @@ export function AIAssistantDrawer({
   // Conversation history state
   const [showHistory, setShowHistory] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(null)
+
+  // Template dropdown state
+  const [openTemplateGroup, setOpenTemplateGroup] = useState<string | null>(null)
 
   // Conversation hooks
   const {
@@ -342,7 +372,7 @@ export function AIAssistantDrawer({
         setCurrentPhase(message.payload.current_phase as Phase)
         setIterationCount(message.payload.iteration_count)
         if (message.payload.attack_path_type) {
-          setAttackPathType(message.payload.attack_path_type as AttackPathType)
+          setAttackPathType(message.payload.attack_path_type)
         }
         break
 
@@ -779,7 +809,7 @@ export function AIAssistantDrawer({
     URL.revokeObjectURL(url)
   }, [chatItems, currentPhase, iterationCount, modelName, todoList])
 
-  const handleNewChat = () => {
+  const handleNewChat = useCallback(() => {
     // Don't stop the running agent — let it continue in background
     // and persist messages via the backend persistence layer
     setChatItems([])
@@ -803,7 +833,7 @@ export function AIAssistantDrawer({
     setConversationId(null)
     setShowHistory(false)
     onResetSession?.()
-  }
+  }, [onResetSession])
 
   // Switch to a different conversation from history
   const handleSelectConversation = useCallback(async (conv: Conversation) => {
@@ -956,7 +986,12 @@ export function AIAssistantDrawer({
 
   const handleDeleteConversation = useCallback(async (id: string) => {
     await deleteConversation(id)
-  }, [deleteConversation])
+    onRefetchGraph?.()
+    // If we just deleted the active conversation, reset to a clean state
+    if (id === conversationId) {
+      handleNewChat()
+    }
+  }, [deleteConversation, onRefetchGraph, conversationId, handleNewChat])
 
   const PhaseIcon = PHASE_CONFIG[currentPhase].icon
 
@@ -1097,23 +1132,36 @@ export function AIAssistantDrawer({
               <span className={styles.subtitle} style={{ color: getConnectionStatusColor() }}>
                 {getConnectionStatusText()}
               </span>
+              <span className={styles.sessionCode} title={sessionId}>
+                Session: {sessionId.slice(-8)}
+              </span>
             </div>
           </div>
         </div>
         <div className={styles.headerActions}>
+          {hasOtherChains && onToggleOtherChains && (
+            <button
+              className={`${styles.iconButton} ${isOtherChainsHidden ? styles.iconButtonActive : ''}`}
+              onClick={onToggleOtherChains}
+              title={isOtherChainsHidden ? 'Show all sessions in graph' : 'Show only this session in graph'}
+              aria-label={isOtherChainsHidden ? 'Show all sessions in graph' : 'Show only this session in graph'}
+            >
+              {isOtherChainsHidden ? <Eye size={14} /> : <EyeOff size={14} />}
+            </button>
+          )}
           <button
             className={styles.iconButton}
             onClick={() => setShowHistory(!showHistory)}
-            title="Conversation history"
-            aria-label="Conversation history"
+            title="Session history"
+            aria-label="Session history"
           >
             <History size={14} />
           </button>
           <button
             className={styles.iconButton}
             onClick={handleNewChat}
-            title="New conversation"
-            aria-label="Start new conversation"
+            title="New session"
+            aria-label="Start new session"
           >
             <Plus size={14} />
           </button>
@@ -1136,7 +1184,7 @@ export function AIAssistantDrawer({
         </div>
       </div>
 
-      {/* Conversation History Panel */}
+      {/* Session History Panel */}
       {showHistory && (
         <ConversationHistory
           conversations={conversations}
@@ -1193,12 +1241,12 @@ export function AIAssistantDrawer({
           <div
             className={styles.phaseBadge}
             style={{
-              backgroundColor: ATTACK_PATH_CONFIG[attackPathType].bgColor,
-              borderColor: ATTACK_PATH_CONFIG[attackPathType].color,
+              backgroundColor: getAttackPathConfig(attackPathType).bgColor,
+              borderColor: getAttackPathConfig(attackPathType).color,
             }}
           >
-            <span style={{ color: ATTACK_PATH_CONFIG[attackPathType].color }}>
-              {ATTACK_PATH_CONFIG[attackPathType].shortLabel}
+            <span style={{ color: getAttackPathConfig(attackPathType).color }}>
+              {getAttackPathConfig(attackPathType).shortLabel}
             </span>
           </div>
         )}
@@ -1248,112 +1296,132 @@ export function AIAssistantDrawer({
             <p className={styles.emptyDescription}>
               Ask me about recon data, vulnerabilities, exploitation, or post-exploitation activities.
             </p>
-            <div className={styles.suggestions}>
-              <button
-                className={styles.suggestion}
-                onClick={() => setInputValue('Map the attack surface: list all domains, subdomains, IPs, open ports, and services discovered')}
-                disabled={!isConnected}
-              >
-                Map the full attack surface
-              </button>
-              <button
-                className={styles.suggestion}
-                onClick={() => setInputValue('Which vulnerabilities have known Metasploit exploit modules available?')}
-                disabled={!isConnected}
-              >
-                Find exploitable CVEs with Metasploit modules
-              </button>
-              <button
-                className={styles.suggestion}
-                onClick={() => setInputValue('Were any credentials, API keys, or secrets leaked in GitHub repositories?')}
-                disabled={!isConnected}
-              >
-                Check for leaked secrets on GitHub
-              </button>
-              <button
-                className={styles.suggestion}
-                onClick={() => setInputValue('Are any CISA Known Exploited Vulnerabilities (KEV) present in the scan results?')}
-                disabled={!isConnected}
-              >
-                Find CISA Known Exploited Vulnerabilities
-              </button>
-              <button
-                className={styles.suggestion}
-                onClick={() => setInputValue('What web endpoints, parameters, and forms were discovered by the crawler?')}
-                disabled={!isConnected}
-              >
-                Show discovered web endpoints and parameters
-              </button>
-              <button
-                className={styles.suggestion}
-                onClick={() => setInputValue('Give me a prioritized risk summary of all findings ranked by severity and exploitability')}
-                disabled={!isConnected}
-              >
-                Prioritized risk summary
-              </button>
-              <button
-                className={styles.suggestion}
-                onClick={() => setInputValue('What technology versions were detected, and which ones have known CVEs?')}
-                disabled={!isConnected}
-              >
-                Detect outdated technologies with known CVEs
-              </button>
-              <button
-                className={styles.suggestion}
-                onClick={() => setInputValue('Which services expose authentication that could be tested with credential brute force?')}
-                disabled={!isConnected}
-              >
-                Find brute-forceable services
-              </button>
-              <button
-                className={styles.suggestion}
-                onClick={() => setInputValue('Analyze TLS certificates and HTTP security headers for misconfigurations')}
-                disabled={!isConnected}
-              >
-                Analyze TLS and security headers
-              </button>
-              <button
-                className={styles.suggestion}
-                onClick={() => setInputValue('Find and exploit the most critical CVE affecting the primary target')}
-                disabled={!isConnected}
-              >
-                Exploit the most critical vulnerability
-              </button>
-              <button
-                className={styles.suggestion}
-                onClick={() => setInputValue('Find the most critical CVE on the target, exploit it with Metasploit, and open a shell session')}
-                disabled={!isConnected}
-              >
-                Exploit a critical CVE and open a session
-              </button>
-              <button
-                className={styles.suggestion}
-                onClick={() => setInputValue('Brute force SSH credentials on the target, then list sensitive files and directories')}
-                disabled={!isConnected}
-              >
-                Brute force SSH and explore the server
-              </button>
-              <button
-                className={styles.suggestion}
-                onClick={() => setInputValue('After gaining access, search for passwords, API keys, config files, and database credentials on the server')}
-                disabled={!isConnected}
-              >
-                Hunt for secrets on a compromised server
-              </button>
-              <button
-                className={styles.suggestion}
-                onClick={() => setInputValue('Exploit the target web server and replace the homepage with a defacement page as proof of compromise')}
-                disabled={!isConnected}
-              >
-                Deface the target homepage
-              </button>
-              <button
-                className={styles.suggestion}
-                onClick={() => setInputValue('Use any secrets or credentials found on GitHub to attempt access to the target server and report what you find')}
-                disabled={!isConnected}
-              >
-                Leverage GitHub secrets to access the server
-              </button>
+            <div className={styles.templateGroups}>
+              {/* Informational */}
+              <div className={styles.templateGroup}>
+                <button
+                  className={`${styles.templateGroupHeader} ${openTemplateGroup === 'informational' ? styles.templateGroupHeaderOpen : ''}`}
+                  onClick={() => setOpenTemplateGroup((prev: string | null) => prev === 'informational' ? null : 'informational')}
+                  style={{ '--tg-color': 'var(--text-tertiary)' } as React.CSSProperties}
+                >
+                  <Shield size={14} />
+                  <span>Informational</span>
+                  <ChevronDown size={14} className={styles.templateGroupChevron} />
+                </button>
+                {openTemplateGroup === 'informational' && (
+                  <div className={styles.templateGroupItems}>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Map the attack surface: list all domains, subdomains, IPs, open ports, and services discovered')} disabled={!isConnected}>
+                      Map the full attack surface
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Which vulnerabilities have known Metasploit exploit modules available?')} disabled={!isConnected}>
+                      Find exploitable CVEs with Metasploit modules
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Were any credentials, API keys, or secrets leaked in GitHub repositories?')} disabled={!isConnected}>
+                      Check for leaked secrets on GitHub
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Are any CISA Known Exploited Vulnerabilities (KEV) present in the scan results?')} disabled={!isConnected}>
+                      Find CISA Known Exploited Vulnerabilities
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('What web endpoints, parameters, and forms were discovered by the crawler?')} disabled={!isConnected}>
+                      Show discovered web endpoints and parameters
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Give me a prioritized risk summary of all findings ranked by severity and exploitability')} disabled={!isConnected}>
+                      Prioritized risk summary
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('What technology versions were detected, and which ones have known CVEs?')} disabled={!isConnected}>
+                      Detect outdated technologies with known CVEs
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Which services expose authentication that could be tested with credential brute force?')} disabled={!isConnected}>
+                      Find brute-forceable services
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Analyze TLS certificates and HTTP security headers for misconfigurations')} disabled={!isConnected}>
+                      Analyze TLS and security headers
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Exploitation */}
+              <div className={styles.templateGroup}>
+                <button
+                  className={`${styles.templateGroupHeader} ${openTemplateGroup === 'exploitation' ? styles.templateGroupHeaderOpen : ''}`}
+                  onClick={() => setOpenTemplateGroup((prev: string | null) => prev === 'exploitation' ? null : 'exploitation')}
+                  style={{ '--tg-color': 'var(--status-warning)' } as React.CSSProperties}
+                >
+                  <Target size={14} />
+                  <span>Exploitation</span>
+                  <ChevronDown size={14} className={styles.templateGroupChevron} />
+                </button>
+                {openTemplateGroup === 'exploitation' && (
+                  <div className={styles.templateGroupItems}>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Find and exploit the most critical CVE affecting the primary target')} disabled={!isConnected}>
+                      Exploit the most critical vulnerability
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Find the most critical CVE on the target, exploit it with Metasploit, and open a shell session')} disabled={!isConnected}>
+                      Exploit a critical CVE and open a session
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Brute force SSH credentials on the target, then list sensitive files and directories')} disabled={!isConnected}>
+                      Brute force SSH and explore the server
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Use any secrets or credentials found on GitHub to attempt access to the target server and report what you find')} disabled={!isConnected}>
+                      Leverage GitHub secrets to access the server
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Test for SQL injection on discovered web forms and parameters, then extract database contents')} disabled={!isConnected}>
+                      Exploit SQL injection on web forms
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Attempt to exploit default or weak credentials on all discovered login panels, admin interfaces, and services')} disabled={!isConnected}>
+                      Test default credentials on all services
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Upload a web shell to the target server through a file upload vulnerability and gain remote command execution')} disabled={!isConnected}>
+                      Upload a web shell via file upload vulnerability
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Chain multiple low-severity findings together to achieve remote code execution on the target')} disabled={!isConnected}>
+                      Chain vulnerabilities for RCE
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Post-Exploitation */}
+              <div className={styles.templateGroup}>
+                <button
+                  className={`${styles.templateGroupHeader} ${openTemplateGroup === 'post_exploitation' ? styles.templateGroupHeaderOpen : ''}`}
+                  onClick={() => setOpenTemplateGroup((prev: string | null) => prev === 'post_exploitation' ? null : 'post_exploitation')}
+                  style={{ '--tg-color': 'var(--status-error)' } as React.CSSProperties}
+                >
+                  <Zap size={14} />
+                  <span>Post-Exploitation</span>
+                  <ChevronDown size={14} className={styles.templateGroupChevron} />
+                </button>
+                {openTemplateGroup === 'post_exploitation' && (
+                  <div className={styles.templateGroupItems}>
+                    <button className={styles.suggestion} onClick={() => setInputValue('After gaining access, search for passwords, API keys, config files, and database credentials on the server')} disabled={!isConnected}>
+                      Hunt for secrets and credentials on the server
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Dump password hashes from /etc/shadow and attempt to crack them offline')} disabled={!isConnected}>
+                      Dump and crack password hashes
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Check for privilege escalation vectors: SUID binaries, sudo misconfigurations, writable cron jobs, and kernel exploits')} disabled={!isConnected}>
+                      Find privilege escalation vectors
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Find database credentials on the server, connect to the database, and dump sensitive tables (users, credentials, PII)')} disabled={!isConnected}>
+                      Pivot to database and dump sensitive data
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Enumerate network interfaces, ARP tables, and routing to discover internal hosts, then attempt to pivot laterally')} disabled={!isConnected}>
+                      Map internal network and pivot laterally
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Enumerate all users on the system, collect SSH keys, bash history, and attempt lateral movement to other hosts')} disabled={!isConnected}>
+                      Harvest SSH keys and move laterally
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Establish persistence on the compromised server using a cron job, SSH key, or backdoor user account')} disabled={!isConnected}>
+                      Establish persistence on the server
+                    </button>
+                    <button className={styles.suggestion} onClick={() => setInputValue('Exploit the target web server and replace the homepage with a defacement page as proof of compromise')} disabled={!isConnected}>
+                      Deface the target homepage
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -1405,6 +1473,17 @@ export function AIAssistantDrawer({
               <span className={styles.approvalArrow}>→</span>
               <span className={styles.approvalTo}>{approvalRequest.to_phase}</span>
             </p>
+
+            <div className={styles.approvalDisclaimer}>
+              <ShieldAlert size={16} className={styles.approvalDisclaimerIcon} />
+              <p className={styles.approvalDisclaimerText}>
+                This transition will enable <strong>active operations</strong> against the target.
+                By approving, you confirm that you <strong>own the target</strong> or have{' '}
+                <strong>explicit written permission</strong> from the owner.
+                Unauthorized activity is illegal and may result in criminal penalties.
+              </p>
+            </div>
+
             <p className={styles.approvalReason}>{approvalRequest.reason}</p>
 
             {approvalRequest.planned_actions.length > 0 && (

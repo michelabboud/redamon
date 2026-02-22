@@ -374,10 +374,11 @@ The agent progresses through three distinct operational phases, each with differ
 
 **Informational Phase** — The default starting phase. The agent gathers intelligence by querying the Neo4j graph, running web searches for CVE details, performing HTTP requests with curl, and scanning ports with Naabu. No offensive tools are available. The agent analyzes the attack surface, identifies high-value targets, and builds a mental model of what's exploitable.
 
-**Exploitation Phase** — When the agent identifies a viable attack path, it requests a phase transition. This requires **user approval** (configurable). Once approved, the agent gains access to the Metasploit console via MCP and can execute exploits. Two attack paths are supported:
+**Exploitation Phase** — When the agent identifies a viable attack path, it requests a phase transition. This requires **user approval** (configurable). Once approved, the agent gains access to the Metasploit console via MCP and can execute exploits. Three attack path types are supported:
 
 - **CVE Exploit** — the agent searches for a matching Metasploit module, configures the payload (reverse shell or bind shell), sets target parameters, and fires the exploit. For statefull mode, it establishes a Meterpreter session; for stateless mode, it executes one-shot commands.
 - **Hydra Brute Force** — the agent uses THC Hydra to brute force credentials against services like SSH, FTP, RDP, SMB, MySQL, HTTP forms, and 50+ other protocols. Hydra settings (threads, timeouts, extra checks) are fully configurable per project. After credentials are discovered, the agent establishes access via `sshpass`, database clients, or Metasploit psexec.
+- **Unclassified Fallback** — for techniques that don't match CVE exploit or brute force (e.g., SQL injection, XSS, SSRF, file upload). The agent dynamically classifies the attack type and uses available tools generically without a mandatory workflow. These appear with a grey badge and a `-unclassified` suffix in the classification.
 
 When an exploit succeeds, the agent automatically creates an **Exploit node** in the Neo4j graph — recording the attack type, target IP, port, CVE IDs, Metasploit module used, payload, session ID, and any credentials discovered. This node is linked to the targeted IP, the exploited CVE, and the entry port, making every successful compromise a permanent, queryable part of the attack surface graph.
 
@@ -488,6 +489,7 @@ The architecture supports **10 attack path categories** (CVE exploitation, brute
 |---|-------------|-------------|-------------|-------------------|
 | 1 | **CVE-Based Exploitation** | Exploits known vulnerabilities identified by CVE identifier. The agent searches for a matching Metasploit exploit module, configures target parameters and payload (reverse/bind shell), and fires the exploit. Supports both statefull (Meterpreter session) and stateless (one-shot command) post-exploitation. | `exploit/*` | Yes |
 | 2 | **Hydra Brute Force** | Password guessing attacks against 50+ authentication protocols (SSH, FTP, RDP, SMB, MySQL, HTTP forms, and more). The agent uses THC Hydra (`execute_hydra`) with configurable threads, timeouts, and retry strategies. After credentials are discovered, the agent establishes access via `sshpass` (SSH), database clients, or Metasploit psexec (SMB). | `execute_hydra` | Sometimes (SSH, SMB) |
+| 3 | **Unclassified Fallback** | Dynamic classification for techniques that don't match CVE or brute force (e.g., `sql_injection-unclassified`, `ssrf-unclassified`). The agent uses all available tools generically without a mandatory workflow. | Any available | Depends on technique |
 
 For full details on all 10 attack path categories, the intent router architecture, chain-specific workflows, and the implementation roadmap, see the **[Attack Paths Documentation](agentic/README.ATTACK_PATHS.md)**.
 
@@ -1260,7 +1262,6 @@ LangGraph-based autonomous agent with ReAct pattern.
 - **Stop & Resume**: Interrupt execution and resume from the last checkpoint
 
 📖 **[Read Agentic Documentation](agentic/README.AGENTIC.md)**
-📖 **[Metasploit Integration Guide](agentic/README.METASPLOIT.GUIDE.md)**
 📖 **[Attack Paths Architecture](agentic/README.ATTACK_PATHS.md)**
 
 ---
@@ -1468,7 +1469,6 @@ These containers are designed to be deployed alongside the main stack so the AI 
 | MCP Servers | [mcp/README.MCP.md](mcp/README.MCP.md) |
 | AI Agent | [agentic/README.AGENTIC.md](agentic/README.AGENTIC.md) |
 | Attack Paths | [agentic/README.ATTACK_PATHS.md](agentic/README.ATTACK_PATHS.md) |
-| Metasploit Guide | [agentic/README.METASPLOIT.GUIDE.md](agentic/README.METASPLOIT.GUIDE.md) |
 | Webapp | [webapp/README.WEBAPP.md](webapp/README.WEBAPP.md) |
 | GVM Scanner | [gvm_scan/README.GVM.md](gvm_scan/README.GVM.md) |
 | GitHub Secret Hunter | [github_secret_hunt/README.md](github_secret_hunt/README.md) |

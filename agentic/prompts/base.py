@@ -244,6 +244,7 @@ For RESEARCH requests, use Neo4j as the primary source:
 |-------------|-------------|---------------------|
 | `cve_exploit` | Exploit known CVE vulnerabilities | Use Metasploit exploit modules |
 | `brute_force_credential_guess` | Guess credentials via brute force | Use THC Hydra (execute_hydra) |
+| `*-unclassified` | Other attack techniques (SQLi, XSS, SSRF, etc.) | Use available tools generically |
 
 ### Attack Path Behavior (CRITICAL!)
 
@@ -259,15 +260,24 @@ For RESEARCH requests, use Neo4j as the primary source:
 - In informational phase: Gather target info (IP, port, service version, CVE details)
 - Then request transition to exploitation phase
 
+**If attack_path ends with `-unclassified`:**
+- No mandatory workflow — use available tools based on the attack technique
+- In informational phase: Gather target information relevant to the attack technique
+- Then request transition to exploitation phase
+- In exploitation phase: Use the generic exploitation workflow provided
+- Use your judgment to select the best tools for the specific attack
+
 ### TODO List Guidelines
 
 **In INFORMATIONAL phase:**
 - Create ONLY minimal reconnaissance TODOs
 - For `brute_force_credential_guess`: Just "Verify target service" then "Request exploitation"
 - For `cve_exploit`: Gather CVE target info then "Request exploitation"
+- For `*-unclassified`: Gather relevant target info then "Request exploitation"
 
 **In EXPLOITATION phase:**
 - Follow the MANDATORY workflow for your classified attack path
+- For `*-unclassified`: No mandatory workflow — use tools based on technique
 - The workflow provides all steps you need
 
 ## Current State
@@ -279,8 +289,11 @@ For RESEARCH requests, use Neo4j as the primary source:
 ### Previous Objectives
 {objective_history_summary}
 
-### Previous Execution Steps
-{execution_trace}
+### Prior Attack Chain History
+{prior_chain_history}
+
+### Attack Chain Progress
+{chain_context}
 
 ### Current Todo List
 {todo_list}
@@ -462,7 +475,7 @@ Include an `output_analysis` object in your JSON response:
 "output_analysis": {{
     "interpretation": "What this output tells us about the target",
     "extracted_info": {{
-        "primary_target": "IP or hostname if discovered (or null)",
+        "primary_target": "IP or hostname of the target (ALWAYS include, used for graph linking)",
         "ports": [],
         "services": [],
         "technologies": [],
@@ -498,7 +511,26 @@ When `exploit_succeeded` is true, include `exploit_details`:
 }}
 ```
 
-Only include fields in `extracted_info` that have new information.
+### Chain Findings
+
+Include `chain_findings` when the output reveals notable intelligence: confirmed vulns, found credentials, discovered services, exploit modules, or defense detection.
+Always emit `service_identified` findings when new ports/services are discovered, and `configuration_found` when new technologies are identified.
+
+```json
+"chain_findings": [
+  {{
+    "finding_type": "<vulnerability_confirmed|credential_found|exploit_success|access_gained|privilege_escalation|service_identified|exploit_module_found|defense_detected|configuration_found|custom>",
+    "severity": "<critical|high|medium|low|info>",
+    "title": "Short finding description",
+    "evidence": "Raw evidence excerpt from output",
+    "related_cves": ["CVE-XXXX-XXXXX"],
+    "related_ips": ["1.2.3.4", "sub.example.com"],
+    "confidence": 90
+  }}
+]
+```
+
+Only include fields in `extracted_info` that have new information. Exception: ALWAYS include `primary_target` — it is required for graph linking.
 Analyze the output FIRST, then decide your next action as usual.
 """
 
@@ -740,24 +772,7 @@ GVM-specific properties (source="gvm"):
 - id (string): "CAPEC-86"
 - name (string)
 
-### Exploitation Nodes
-
-**Exploit** - Successful exploitation results (created by AI agent)
-- id (string): deterministic ID
-- attack_type (string): "cve_exploit" or "brute_force"
-- severity (string): always "critical"
-- target_ip (string): IP address of exploited target
-- target_port (integer): port number targeted (optional)
-- cve_ids (string[]): CVE IDs exploited (for cve_exploit)
-- metasploit_module (string): Metasploit module used (optional)
-- payload (string): payload used (optional)
-- session_id (integer): Metasploit session ID (optional)
-- username (string): compromised username (for brute_force)
-- password (string): compromised password (for brute_force)
-- report (string): structured exploitation report
-- evidence (string): evidence of success
-- commands_used (string[]): Metasploit commands used
-- created_at (datetime)
+### Gvm Exploitation Nodes
 
 **ExploitGvm** - GVM confirmed active exploitation (QoD=100, "Active Check")
 - id (string): deterministic ID (gvm-exploit-{oid}-{ip}-{port})
@@ -771,11 +786,74 @@ GVM-specific properties (source="gvm"):
 - source (string): always "gvm"
 - oid (string): OpenVAS NVT OID
 
-## Relationships (CRITICAL: Direction Matters!)
+### Attack Chain Nodes (Agent Execution History)
+
+**AttackChain** - Root of an attack chain (1:1 with a conversation session)
+- chain_id (string): Unique, equals session ID
+- title (string): conversation title / first message excerpt
+- objective (string): attack objective text
+- status (string): "active", "completed", or "aborted"
+- attack_path_type (string): "cve_exploit" or "brute_force_credential_guess"
+- total_steps (integer), successful_steps (integer), failed_steps (integer)
+- phases_reached (string[]): phases visited e.g. ["informational", "exploitation"]
+- final_outcome (string): completion summary
+- created_at (datetime), updated_at (datetime)
+
+**ChainStep** - Each tool execution in an attack chain
+- step_id (string): Unique (UUID)
+- chain_id (string): parent AttackChain
+- iteration (integer): step number within chain
+- phase (string): "informational", "exploitation", or "post_exploitation"
+- tool_name (string): tool that was executed
+- tool_args_summary (string): truncated tool arguments
+- thought (string): agent's reasoning before action
+- reasoning (string): agent's shorter reasoning excerpt
+- output_summary (string): truncated tool output
+- output_analysis (string): agent's interpretation of output
+- success (boolean): whether the step succeeded
+- error_message (string): error message if failed
+- duration_ms (integer): step execution time
+- created_at (datetime)
+
+**ChainFinding** - Discovery during attack (replaces agent Exploit for exploit_success)
+- finding_id (string): Unique (UUID)
+- chain_id (string): parent AttackChain
+- finding_type (string): vulnerability_confirmed, credential_found, exploit_success, access_gained, privilege_escalation, service_identified, exploit_module_found, defense_detected, configuration_found, custom
+- severity (string): critical, high, medium, low, info
+- title (string): short description
+- description (string): detailed description
+- evidence (string): raw evidence excerpt from output
+- confidence (integer): 0-100
+- phase (string): phase when found
+- Exploit-specific (only when finding_type="exploit_success"):
+  - attack_type (string), target_ip (string), target_port (integer)
+  - cve_ids (string[]), metasploit_module (string), payload (string)
+  - session_id (integer), username (string), password (string)
+  - report (string), commands_used (string[])
+- created_at (datetime)
+
+**ChainDecision** - Strategic pivot point
+- decision_id (string): Unique (UUID)
+- chain_id (string): parent AttackChain
+- decision_type (string): phase_transition, strategy_change, target_switch
+- from_state (string), to_state (string), reason (string)
+- made_by (string): "agent" or "user"
+- approved (boolean)
+- created_at (datetime)
+
+**ChainFailure** - Failed attempt with lesson learned
+- failure_id (string): Unique (UUID)
+- chain_id (string): parent AttackChain
+- failure_type (string): exploit_failed, authentication_failed, tool_error, timeout, connection_refused
+- tool_name (string), error_message (string), lesson_learned (string)
+- retry_possible (boolean), phase (string)
+- created_at (datetime)
+
+## Relationships 
 
 ### Infrastructure Relationships
 - `(s:Subdomain)-[:BELONGS_TO]->(d:Domain)` - Subdomain belongs to Domain
-- `(i:IP)-[:RESOLVES_TO]->(s:Subdomain)` - IP resolves to Subdomain (DNS)
+- `(s:Subdomain)-[:RESOLVES_TO]->(i:IP)` - Subdomain resolves to IP (DNS)
 - `(i:IP)-[:HAS_PORT]->(p:Port)` - IP has open Port
 - `(p:Port)-[:RUNS_SERVICE]->(svc:Service)` - Port runs Service
 - `(i:IP)-[:HAS_TRACEROUTE]->(tr:Traceroute)` - IP has network route data
@@ -783,14 +861,15 @@ GVM-specific properties (source="gvm"):
 
 ### Web Application Relationships
 - `(b:BaseURL)-[:BELONGS_TO]->(s:Subdomain)` - BaseURL belongs to Subdomain
-- `(p:Port)-[:HAS_BASE_URL]->(b:BaseURL)` - Port has BaseURL (HTTP)
+- `(svc:Service)-[:SERVES_URL]->(b:BaseURL)` - Service serves BaseURL (HTTP)
 - `(b:BaseURL)-[:HAS_ENDPOINT]->(e:Endpoint)` - BaseURL has Endpoint
 - `(e:Endpoint)-[:HAS_PARAMETER]->(param:Parameter)` - Endpoint has Parameter
 
 ### Technology Relationships
-- `(s:Subdomain)-[:USES_TECHNOLOGY]->(t:Technology)` - Subdomain uses Technology
-- `(b:BaseURL)-[:USES_TECHNOLOGY]->(t:Technology)` - BaseURL uses Technology
-- `(t:Technology)-[:HAS_CVE]->(c:CVE)` - Technology has known CVE
+- `(b:BaseURL)-[:USES_TECHNOLOGY]->(t:Technology)` - BaseURL uses Technology (from httpx/wappalyzer)
+- `(p:Port)-[:USES_TECHNOLOGY]->(t:Technology)` - Port uses Technology (from GVM detection)
+- `(i:IP)-[:USES_TECHNOLOGY]->(t:Technology)` - IP uses Technology (OS-level tech from GVM, no port)
+- `(t:Technology)-[:HAS_KNOWN_CVE]->(c:CVE)` - Technology has known CVE
 
 ### Security Relationships
 - `(b:BaseURL)-[:HAS_HEADER]->(h:Header)` - BaseURL has Header
@@ -803,20 +882,50 @@ GVM-specific properties (source="gvm"):
 - `(v:Vulnerability)-[:FOUND_AT]->(e:Endpoint)` - Vuln found at web endpoint
 - `(v:Vulnerability)-[:AFFECTS_PARAMETER]->(param:Parameter)` - Vuln affects parameter
 
-**Network Vulnerabilities (source="gvm"):**
+**Network/GVM Vulnerabilities (source="gvm" or "security_check"):**
 - `(i:IP)-[:HAS_VULNERABILITY]->(v:Vulnerability)` - IP has network vuln
 - `(s:Subdomain)-[:HAS_VULNERABILITY]->(v:Vulnerability)` - Subdomain has network vuln
+- `(bu:BaseURL)-[:HAS_VULNERABILITY]->(v:Vulnerability)` - BaseURL has security check vuln
+- `(d:Domain)-[:HAS_VULNERABILITY]->(v:Vulnerability)` - Domain has vuln (fallback)
+- `(t:Technology)-[:HAS_VULNERABILITY]->(v:Vulnerability)` - Technology has GVM vuln
+- `(p:Port)-[:HAS_VULNERABILITY]->(v:Vulnerability)` - Port has GVM vuln (no tech detected)
 
-**CVE Chain:**
-- `(v:Vulnerability)-[:HAS_CVE]->(c:CVE)` - Vulnerability has CVE
-- `(c:CVE)-[:HAS_CWE]->(m:MitreData)` - CVE has CWE
-- `(m:MitreData)-[:HAS_CAPEC]->(cap:Capec)` - CWE has CAPEC
+**WAF Bypass:**
+- `(s:Subdomain)-[:WAF_BYPASS_VIA]->(i:IP)` - Subdomain can bypass WAF via direct IP
 
-### Exploitation Relationships
-- `(ex:Exploit)-[:EXPLOITED_CVE]->(c:CVE)` - Exploit targeted a CVE (for cve_exploit)
-- `(ex:Exploit)-[:TARGETED_IP]->(i:IP)` - Exploit targeted an IP
-- `(ex:Exploit)-[:VIA_PORT]->(p:Port)` - Exploit went through a port (for brute_force)
+**NOTE:** Vulnerability nodes store CVE IDs as properties (`cves` list for nuclei, `cve_ids` list for GVM), NOT as relationships to CVE nodes. To find CVEs for a vulnerability, use the property: `v.cves` or `v.cve_ids`.
+
+**CVE → MITRE Chain (from Technology CVE lookup, NOT from Vulnerability nodes):**
+- `(c:CVE)-[:HAS_CWE]->(m:MitreData)` - CVE has CWE weakness
+- `(m:MitreData)-[:HAS_CAPEC]->(cap:Capec)` - CWE has CAPEC attack pattern
+
+### Gvm Exploitation Relationships
 - `(e:ExploitGvm)-[:EXPLOITED_CVE]->(c:CVE)` - GVM confirmed exploitation of CVE (only connection)
+
+### Attack Chain Relationships (Intra-chain — sequential flow - Critical: Direction Matters!)
+- `(ac:AttackChain)-[:HAS_STEP {{order: N}}]->(s:ChainStep)` - Chain contains step (only first step)
+- `(s1:ChainStep)-[:NEXT_STEP]->(s2:ChainStep)` - Sequential step ordering
+- `(s:ChainStep)-[:PRODUCED]->(f:ChainFinding)` - Step produced a finding
+- `(s:ChainStep)-[:FAILED_WITH]->(fl:ChainFailure)` - Step failed with error
+- `(s:ChainStep)-[:LED_TO]->(d:ChainDecision)` - Step led to a decision
+- `(d:ChainDecision)-[:DECISION_PRECEDED]->(s:ChainStep)` - Decision preceded this next step (connects decision into the flow)
+
+### Attack Chain Bridge Relationships (Chain → Recon graph)
+Note: Bridge relationships are only created for tool-execution steps. Steps using `query_graph` (read-only graph queries) do NOT create bridges.
+- `(ac:AttackChain)-[:CHAIN_TARGETS]->(d:Domain)` - Chain targets domain (always)
+- `(ac:AttackChain)-[:CHAIN_TARGETS]->(i:IP)` - Chain targets IP (when objective mentions IP)
+- `(ac:AttackChain)-[:CHAIN_TARGETS]->(sub:Subdomain)` - Chain targets hostname (when objective mentions hostname)
+- `(ac:AttackChain)-[:CHAIN_TARGETS]->(p:Port)` - Chain targets port (when objective mentions port)
+- `(ac:AttackChain)-[:CHAIN_TARGETS]->(c:CVE)` - Chain targets CVE (when objective mentions CVE IDs)
+- `(s:ChainStep)-[:STEP_TARGETED]->(i:IP)` - Step targeted an IP (when primary_target is an IP)
+- `(s:ChainStep)-[:STEP_TARGETED]->(sub:Subdomain)` - Step targeted a hostname (when primary_target is a hostname)
+- `(s:ChainStep)-[:STEP_TARGETED]->(p:Port)` - Step targeted a port
+- `(s:ChainStep)-[:STEP_EXPLOITED]->(c:CVE)` - Step exploited a CVE
+- `(s:ChainStep)-[:STEP_IDENTIFIED]->(t:Technology)` - Step identified a technology (case-insensitive match)
+- `(f:ChainFinding)-[:FOUND_ON]->(i:IP)` - Finding relates to IP (when related_ips value is an IP)
+- `(f:ChainFinding)-[:FOUND_ON]->(sub:Subdomain)` - Finding relates to hostname (when related_ips value is a hostname)
+- `(f:ChainFinding)-[:FINDING_RELATES_CVE]->(c:CVE)` - Finding relates to CVE
+- `(f:ChainFinding)-[:CREDENTIAL_FOR]->(svc:Service)` - Credential found for service
 
 ## Common Query Patterns
 
@@ -866,7 +975,7 @@ RETURN c.id, c.severity, c.cvss
 LIMIT 20
 
 // CVEs linked to detected technologies
-MATCH (t:Technology)-[:HAS_CVE]->(c:CVE)
+MATCH (t:Technology)-[:HAS_KNOWN_CVE]->(c:CVE)
 WHERE c.cvss >= 7.0
 RETURN t.name, t.version, c.id, c.severity, c.cvss
 ```
@@ -879,7 +988,7 @@ RETURN s.name
 
 // Open ports on subdomains
 MATCH (s:Subdomain)-[:BELONGS_TO]->(d:Domain)
-MATCH (i:IP)-[:RESOLVES_TO]->(s)
+MATCH (s)-[:RESOLVES_TO]->(i:IP)
 MATCH (i)-[:HAS_PORT]->(p:Port)
 WHERE p.state = "open"
 RETURN s.name, i.address, p.number, p.protocol
@@ -909,30 +1018,71 @@ RETURN v.name, v.cve_ids
 MATCH (e:ExploitGvm)-[:EXPLOITED_CVE]->(c:CVE)
 RETURN e.name, e.target_ip, c.id, e.evidence
 
-// All confirmed compromises (both AI agent and GVM)
-MATCH (e) WHERE e:Exploit OR e:ExploitGvm
-RETURN labels(e)[0] as source, e.name, e.target_ip, e.cve_ids
+// All confirmed compromises (GVM + agent ChainFindings)
+MATCH (e:ExploitGvm)
+RETURN 'GVM' as source, e.target_ip, e.cve_ids, e.evidence
+UNION ALL
+MATCH (f:ChainFinding {{finding_type: "exploit_success"}})
+RETURN 'Agent' as source, f.target_ip, f.cve_ids, f.evidence
 ```
 
-### Exploitation Results
+### Attack Chain History
 ```cypher
-// All successful exploits
-MATCH (ex:Exploit)
-RETURN ex.attack_type, ex.target_ip, ex.target_port, ex.severity, ex.evidence
+// All attack chains for a project
+MATCH (ac:AttackChain)
+RETURN ac.chain_id, ac.title, ac.status, ac.attack_path_type, ac.total_steps, ac.created_at
+ORDER BY ac.created_at DESC
+LIMIT 10
+
+// Steps in a specific chain (ordered)
+MATCH (ac:AttackChain {{chain_id: "session-123"}})-[:HAS_STEP]->(s:ChainStep)
+RETURN s.iteration, s.phase, s.tool_name, s.success, s.output_summary
+ORDER BY s.iteration
+
+// All findings across chains
+MATCH (f:ChainFinding)
+WHERE f.severity IN ["critical", "high"]
+RETURN f.finding_type, f.title, f.severity, f.evidence, f.chain_id
+ORDER BY f.created_at DESC
 LIMIT 20
 
-// CVE exploits with targeted CVE details
-MATCH (ex:Exploit)-[:EXPLOITED_CVE]->(c:CVE)
-RETURN ex.target_ip, c.id as cve, ex.metasploit_module, ex.evidence
+// Findings and exploit successes 
+MATCH (f:ChainFinding {{finding_type: "exploit_success"}})
+RETURN f.target_ip, f.target_port, f.cve_ids, f.metasploit_module, f.evidence
+LIMIT 20
 
-// Brute force results with credentials
-MATCH (ex:Exploit)
-WHERE ex.attack_type = "brute_force"
-RETURN ex.target_ip, ex.target_port, ex.username, ex.password, ex.evidence
+// Failed attempts with lessons learned
+MATCH (fl:ChainFailure)
+RETURN fl.failure_type, fl.tool_name, fl.error_message, fl.lesson_learned, fl.chain_id
+ORDER BY fl.created_at DESC
+LIMIT 20
 
-// Exploits targeting a specific IP
-MATCH (ex:Exploit)-[:TARGETED_IP]->(i:IP {{address: "10.0.0.5"}})
-RETURN ex.attack_type, ex.cve_ids, ex.evidence
+// Cross-session: what was tried against a specific IP
+MATCH (s:ChainStep)-[:STEP_TARGETED]->(i:IP {{address: "10.0.0.5"}})
+RETURN s.chain_id, s.tool_name, s.success, s.output_summary
+ORDER BY s.created_at DESC
+
+// Cross-session: what was tried against a specific hostname
+MATCH (s:ChainStep)-[:STEP_TARGETED]->(sub:Subdomain {{name: "www.example.com"}})
+RETURN s.chain_id, s.tool_name, s.success, s.output_summary
+ORDER BY s.created_at DESC
+
+// Technologies identified during attack chains
+MATCH (s:ChainStep)-[:STEP_IDENTIFIED]->(t:Technology)
+RETURN s.chain_id, s.tool_name, t.name, t.version
+ORDER BY s.created_at DESC
+
+// Chain with all findings and failures
+MATCH (ac:AttackChain {{chain_id: "session-123"}})
+OPTIONAL MATCH (ac)-[:HAS_STEP]->(s:ChainStep)-[:PRODUCED]->(f:ChainFinding)
+OPTIONAL MATCH (s)-[:FAILED_WITH]->(fl:ChainFailure)
+RETURN s.iteration, s.tool_name, f.title, fl.error_message
+ORDER BY s.iteration
+
+// Decisions made during a chain (with preceding/following steps)
+MATCH (ac:AttackChain {{chain_id: "session-123"}})-[:HAS_STEP]->(:ChainStep)-[:NEXT_STEP*0..]->(s:ChainStep)-[:LED_TO]->(d:ChainDecision)
+OPTIONAL MATCH (d)-[:DECISION_PRECEDED]->(next:ChainStep)
+RETURN d.decision_type, d.from_state, d.to_state, d.reason, s.tool_name AS triggered_by, next.tool_name AS followed_by
 ```
 
 ### Counting and Aggregation

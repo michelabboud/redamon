@@ -2,7 +2,7 @@
 
 Comprehensive documentation of all Metasploit attack path categories and the proposed Agent Routing system for intelligent attack chain orchestration.
 
-> **Context**: The RedAmon agent supports CVE-based exploitation and Hydra brute force credential guess chains, with no-module fallback workflows using nuclei, curl, code execution, and Kali shell tools. This document defines all possible attack path categories to enable evolution toward a multi-path routing system.
+> **Context**: The RedAmon agent supports CVE-based exploitation, Hydra brute force credential guess chains, and **unclassified attack paths** (dynamic fallback for techniques that don't match the two primary categories), with no-module fallback workflows using nuclei, curl, code execution, and Kali shell tools. This document defines all possible attack path categories to enable evolution toward a multi-path routing system.
 
 ---
 
@@ -13,6 +13,7 @@ Comprehensive documentation of all Metasploit attack path categories and the pro
 3. [Attack Path Categories](#attack-path-categories)
    - [Category 1: CVE-Based Exploitation](#category-1-cve-based-exploitation-current)
    - [Category 2: Brute Force / Credential Attacks](#category-2-brute-force--credential-attacks)
+   - [Unclassified Fallback](#unclassified-fallback-current)
    - [Category 3: Social Engineering / Phishing](#category-3-social-engineering--phishing)
    - [Category 4: Denial of Service (DoS)](#category-4-denial-of-service-dos)
    - [Category 5: Fuzzing / Vulnerability Discovery](#category-5-fuzzing--vulnerability-discovery)
@@ -31,7 +32,13 @@ Comprehensive documentation of all Metasploit attack path categories and the pro
 
 ### Implemented Attack Chains
 
-The orchestrator (`orchestrator.py`) implements two classified attack path categories: **CVE-Based Exploitation** and **Brute Force / Credential Guess**, plus a **No-Module Fallback** workflow for CVEs without Metasploit modules.
+The orchestrator (`orchestrator.py`) implements three classified attack path categories:
+
+1. **CVE-Based Exploitation** (`cve_exploit`) — Metasploit-based CVE exploitation with payload selection
+2. **Brute Force / Credential Guess** (`brute_force_credential_guess`) — THC Hydra brute force against 50+ protocols
+3. **Unclassified Fallback** (`<term>-unclassified`) — Dynamic classification for techniques that don't match the above (e.g., `sql_injection-unclassified`, `ssrf-unclassified`). Uses generic tool guidance without workflow-specific prompts.
+
+Additionally, the CVE path includes a **No-Module Fallback** workflow for CVEs without Metasploit modules.
 
 #### Available Tools (across all phases)
 
@@ -446,6 +453,52 @@ ls /usr/share/metasploit-framework/data/wordlists/*user*
 - SSH: If `ssh_login` succeeds with `CreateSession: true`, get shell session
 - SMB: Use captured credentials with `psexec` or other SMB exploits
 - Database: Direct database access for data exfiltration
+
+---
+
+## Unclassified Fallback (CURRENT)
+
+**Status**: IMPLEMENTED
+**Classification**: `<descriptive_term>-unclassified` (e.g., `sql_injection-unclassified`, `ssrf-unclassified`)
+**Prompts**: Generic exploitation guidance (`prompts/unclassified_prompts.py`)
+
+### Overview
+
+When a user request doesn't match CVE exploitation or brute force credential guessing, the LLM classifier creates a dynamic attack path type by generating a short, descriptive snake_case term followed by `-unclassified`. This fallback ensures the agent can handle arbitrary exploitation requests without being forced into an inappropriate workflow.
+
+### How It Works
+
+1. **Classification**: The LLM analyzes the user's request and determines it doesn't fit `cve_exploit` or `brute_force_credential_guess`
+2. **Naming**: The LLM creates a descriptive term (e.g., `sql_injection`, `xss`, `ssrf`, `file_upload`, `command_injection`)
+3. **Suffix**: The term is appended with `-unclassified` to clearly mark it as a path without specialized workflow prompts
+4. **Validation**: The Pydantic validator enforces the pattern `^[a-z][a-z0-9_]*-unclassified$`
+
+### Example Classifications
+
+| User Request | Classification |
+|-------------|---------------|
+| "Try SQL injection on the web app" | `sql_injection-unclassified` |
+| "Test for SSRF on the API" | `ssrf-unclassified` |
+| "Try to upload a web shell" | `file_upload-unclassified` |
+| "Test for XSS on the login page" | `xss-unclassified` |
+| "Attempt directory traversal" | `directory_traversal-unclassified` |
+| "Try command injection" | `command_injection-unclassified` |
+
+### Agent Behavior
+
+- **No mandatory workflow**: The agent uses available tools generically based on the technique
+- **All exploitation tools available**: metasploit_console, execute_hydra, execute_code, execute_curl, execute_nuclei, kali_shell
+- **Frontend badge**: Displays a grey badge with the technique abbreviation (e.g., "SI" for SQL Injection)
+- **Graph storage**: The `attack_path_type` is stored as-is in the `AttackChain` Neo4j node
+
+### Relevant Files
+
+| File | Purpose |
+|------|---------|
+| `prompts/classification.py` | Classification prompt with unclassified option |
+| `prompts/unclassified_prompts.py` | Generic exploitation guidance (no specific workflow) |
+| `prompts/__init__.py` | Routing logic: `attack_path_type.endswith("-unclassified")` |
+| `state.py` | Pydantic validator for the `*-unclassified` pattern |
 
 ---
 

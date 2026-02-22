@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
+import { Link2 } from 'lucide-react'
 import { NODE_COLORS } from '../../config'
 import { GraphData } from '../../types'
 import type { ViewMode } from '../ViewTabs'
@@ -17,6 +18,12 @@ interface PageBottomBarProps {
   onToggleNodeType?: (type: string) => void
   onSelectAllTypes?: () => void
   onClearAllTypes?: () => void
+  // Session visibility props
+  sessionChainIds?: string[]
+  hiddenSessions?: Set<string>
+  onToggleSession?: (chainId: string) => void
+  onShowAllSessions?: () => void
+  onHideAllSessions?: () => void
 }
 
 export function PageBottomBar({
@@ -29,10 +36,19 @@ export function PageBottomBar({
   onToggleNodeType,
   onSelectAllTypes,
   onClearAllTypes,
+  sessionChainIds = [],
+  hiddenSessions,
+  onToggleSession,
+  onShowAllSessions,
+  onHideAllSessions,
 }: PageBottomBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)
+  const [sessionMenuOpen, setSessionMenuOpen] = useState(false)
+  const sessionMenuRef = useRef<HTMLDivElement>(null)
+  const sessionBtnRef = useRef<HTMLButtonElement>(null)
+  const [menuPos, setMenuPos] = useState<{ left: number; bottom: number } | null>(null)
 
   const checkScroll = useCallback(() => {
     const el = scrollRef.current
@@ -50,6 +66,20 @@ export function PageBottomBar({
     return () => observer.disconnect()
   }, [checkScroll])
 
+  // Close session menu on outside click
+  useEffect(() => {
+    if (!sessionMenuOpen) return
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as Node
+      // Keep open if click is on the menu or the toggle button
+      if (sessionMenuRef.current?.contains(target)) return
+      if (sessionBtnRef.current?.contains(target)) return
+      setSessionMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [sessionMenuOpen])
+
   const scroll = (direction: 'left' | 'right') => {
     const el = scrollRef.current
     if (!el) return
@@ -60,6 +90,8 @@ export function PageBottomBar({
     () => nodeTypeCounts ? Object.keys(nodeTypeCounts).sort() : [],
     [nodeTypeCounts]
   )
+
+  const visibleSessionCount = sessionChainIds.length - (hiddenSessions?.size ?? 0)
 
   return (
     <div className={styles.bottomBar}>
@@ -105,6 +137,71 @@ export function PageBottomBar({
           </button>
         )}
       </div>
+
+      {sessionChainIds.length > 0 && (
+        <>
+          <div className={styles.divider} />
+          <div className={styles.sessionSection}>
+            <button
+              ref={sessionBtnRef}
+              className={`${styles.sessionToggle} ${sessionMenuOpen ? styles.sessionToggleActive : ''}`}
+              onClick={() => {
+                if (!sessionMenuOpen && sessionBtnRef.current) {
+                  const rect = sessionBtnRef.current.getBoundingClientRect()
+                  setMenuPos({
+                    left: rect.left + rect.width / 2,
+                    bottom: window.innerHeight - rect.top + 8,
+                  })
+                }
+                setSessionMenuOpen((prev: boolean) => !prev)
+              }}
+            >
+              <Link2 size={12} />
+              <span>Sessions</span>
+              <span className={styles.sessionBadge}>
+                {visibleSessionCount}/{sessionChainIds.length}
+              </span>
+            </button>
+
+            {sessionMenuOpen && menuPos && (
+              <div
+                ref={sessionMenuRef}
+                className={styles.sessionMenu}
+                style={{
+                  position: 'fixed',
+                  left: menuPos.left,
+                  bottom: menuPos.bottom,
+                  transform: 'translateX(-50%)',
+                }}
+              >
+                <div className={styles.sessionMenuHeader}>
+                  <span>Attack Chain Sessions</span>
+                  <div className={styles.sessionMenuActions}>
+                    <button className={styles.chipAction} onClick={onShowAllSessions}>All</button>
+                    <button className={styles.chipAction} onClick={onHideAllSessions}>None</button>
+                  </div>
+                </div>
+                <div className={styles.sessionMenuList}>
+                  {sessionChainIds.map(chainId => {
+                    const isVisible = !hiddenSessions?.has(chainId)
+                    return (
+                      <button
+                        key={chainId}
+                        className={`${styles.sessionItem} ${isVisible ? styles.sessionItemActive : ''}`}
+                        onClick={() => onToggleSession?.(chainId)}
+                      >
+                        <span className={styles.sessionDot} />
+                        <span className={styles.sessionCode}>{chainId.slice(-8)}</span>
+                        <span className={styles.sessionStatus}>{isVisible ? 'ON' : 'OFF'}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       <div className={styles.divider} />
 

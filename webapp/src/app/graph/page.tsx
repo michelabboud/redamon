@@ -101,9 +101,13 @@ export default function GraphPage() {
   // Check if recon is running to enable auto-refresh of graph data
   const isReconRunning = reconState?.status === 'running' || reconState?.status === 'starting'
 
-  // Graph data with auto-refresh every 5 seconds while recon is running
+  // Check if any agent conversation is active (writes attack chain nodes to graph)
+  const isAgentRunning = agentSummary.activeCount > 0
+
+  // Graph data with auto-refresh every 5 seconds while recon or agent is running
   const { data, isLoading, error, refetch: refetchGraph } = useGraphData(projectId, {
     isReconRunning,
+    isAgentRunning,
   })
 
   // Recon logs SSE hook
@@ -183,19 +187,118 @@ export default function GraphPage() {
     if (nodeTypes.length > 0 && !tableInitialized) {
       setActiveNodeTypes(new Set(nodeTypes))
       setTableInitialized(true)
+    } else if (tableInitialized) {
+      // Auto-enable newly discovered node types (e.g. attack chain nodes created mid-session)
+      setActiveNodeTypes((prev: Set<string>) => {
+        const newTypes = nodeTypes.filter((t: string) => !prev.has(t))
+        if (newTypes.length === 0) return prev
+        const next = new Set(prev)
+        newTypes.forEach((t: string) => next.add(t))
+        return next
+      })
     }
   }, [nodeTypes, tableInitialized])
 
-  const filteredByType = useMemo(() => {
+  const filteredByTypeOnly = useMemo(() => {
     if (activeNodeTypes.size === 0) return []
     return tableRows.filter(r => activeNodeTypes.has(r.node.type))
   }, [tableRows, activeNodeTypes])
 
-  // Filtered graph data for GraphCanvas (filter nodes + only keep links between visible nodes)
+  // ── Session (chain) visibility ──────────────────────────────────────
+  const CHAIN_NODE_TYPES = useMemo(() => new Set([
+    'AttackChain', 'ChainStep', 'ChainDecision', 'ChainFailure', 'ChainFinding',
+  ]), [])
+
+  const sessionChainIds = useMemo(() => {
+    if (!data) return []
+    const ids = new Set<string>()
+    for (const node of data.nodes) {
+      const chainId = node.properties?.chain_id as string | undefined
+      if (chainId && CHAIN_NODE_TYPES.has(node.type)) {
+        ids.add(chainId)
+      }
+    }
+    return Array.from(ids).sort()
+  }, [data, CHAIN_NODE_TYPES])
+
+  const [hiddenSessions, setHiddenSessions] = useState<Set<string>>(new Set())
+
+  // Auto-show newly discovered sessions
+  useEffect(() => {
+    setHiddenSessions((prev: Set<string>) => {
+      const updated = new Set<string>()
+      for (const id of prev) {
+        if (sessionChainIds.includes(id)) updated.add(id)
+      }
+      return updated.size !== prev.size ? updated : prev
+    })
+  }, [sessionChainIds])
+
+  const handleToggleSession = useCallback((chainId: string) => {
+    setHiddenSessions((prev: Set<string>) => {
+      const next = new Set(prev)
+      if (next.has(chainId)) next.delete(chainId)
+      else next.add(chainId)
+      return next
+    })
+  }, [])
+
+  const handleShowAllSessions = useCallback(() => {
+    setHiddenSessions(new Set())
+  }, [])
+
+  const handleHideAllSessions = useCallback(() => {
+    setHiddenSessions(new Set(sessionChainIds))
+  }, [sessionChainIds])
+
+  // "Hide other chains" / "Show all" toggle for the AI drawer
+  const isOtherChainsHidden = useMemo(() => {
+    if (hiddenSessions.size === 0) return false
+    const otherChains = sessionChainIds.filter((id: string) => id !== sessionId)
+    if (otherChains.length === 0) return false
+    return otherChains.every((id: string) => hiddenSessions.has(id))
+  }, [hiddenSessions, sessionChainIds, sessionId])
+
+  const handleToggleOtherChains = useCallback(() => {
+    const otherChains = sessionChainIds.filter((id: string) => id !== sessionId)
+    setHiddenSessions((prev: Set<string>) => {
+      const allOthersHidden = otherChains.every((id: string) => prev.has(id))
+      if (allOthersHidden) {
+        return new Set()
+      } else {
+        return new Set(otherChains)
+      }
+    })
+  }, [sessionChainIds, sessionId])
+  // ── End session visibility ────────────────────────────────────────
+
+  // Table rows filtered by type + hidden sessions
+  const filteredByType = useMemo(() => {
+    if (hiddenSessions.size === 0) return filteredByTypeOnly
+    return filteredByTypeOnly.filter((r: { node: { type: string; properties: Record<string, unknown> } }) => {
+      if (CHAIN_NODE_TYPES.has(r.node.type)) {
+        const chainId = r.node.properties?.chain_id as string | undefined
+        if (chainId && hiddenSessions.has(chainId)) return false
+      }
+      return true
+    })
+  }, [filteredByTypeOnly, hiddenSessions, CHAIN_NODE_TYPES])
+
+  // Filtered graph data for GraphCanvas (filter nodes by type + hidden sessions, then prune links)
   const filteredGraphData = useMemo(() => {
     if (!data) return undefined
-    if (activeNodeTypes.size === nodeTypes.length) return data // all types active, no filter needed
-    const filteredNodes = data.nodes.filter(n => activeNodeTypes.has(n.type))
+    const allTypesActive = activeNodeTypes.size === nodeTypes.length
+    const noSessionsHidden = hiddenSessions.size === 0
+    if (allTypesActive && noSessionsHidden) return data // nothing filtered
+    const filteredNodes = data.nodes.filter(n => {
+      if (!activeNodeTypes.has(n.type)) return false
+      // Hide chain nodes belonging to hidden sessions
+      if (hiddenSessions.size > 0 && CHAIN_NODE_TYPES.has(n.type)) {
+        const chainId = n.properties?.chain_id as string | undefined
+        if (chainId && hiddenSessions.has(chainId)) return false
+      }
+      return true
+    })
     const visibleIds = new Set(filteredNodes.map(n => n.id))
     const filteredLinks = data.links.filter(l => {
       const srcId = typeof l.source === 'string' ? l.source : l.source.id
@@ -203,7 +306,7 @@ export default function GraphPage() {
       return visibleIds.has(srcId) && visibleIds.has(tgtId)
     })
     return { ...data, nodes: filteredNodes, links: filteredLinks }
-  }, [data, activeNodeTypes, nodeTypes.length])
+  }, [data, activeNodeTypes, nodeTypes.length, hiddenSessions, CHAIN_NODE_TYPES])
 
   const textFilteredCount = useMemo(() => {
     if (!globalFilter) return filteredByType.length
@@ -534,6 +637,7 @@ export default function GraphPage() {
               selectedNode={selectedNode}
               onNodeClick={selectNode}
               isDark={isDark}
+              activeChainId={sessionId}
             />
           ) : (
             <DataTable
@@ -597,6 +701,10 @@ export default function GraphPage() {
         toolPhaseMap={currentProject?.agentToolPhaseMap}
         stealthMode={currentProject?.stealthMode}
         onToggleStealth={handleToggleStealth}
+        onRefetchGraph={refetchGraph}
+        isOtherChainsHidden={isOtherChainsHidden}
+        onToggleOtherChains={handleToggleOtherChains}
+        hasOtherChains={sessionChainIds.length > 1 || (sessionChainIds.length === 1 && sessionChainIds[0] !== sessionId)}
       />
 
       <ReconConfirmModal
@@ -629,6 +737,11 @@ export default function GraphPage() {
         onToggleNodeType={handleToggleNodeType}
         onSelectAllTypes={handleSelectAllTypes}
         onClearAllTypes={handleClearAllTypes}
+        sessionChainIds={sessionChainIds}
+        hiddenSessions={hiddenSessions}
+        onToggleSession={handleToggleSession}
+        onShowAllSessions={handleShowAllSessions}
+        onHideAllSessions={handleHideAllSessions}
       />
     </div>
   )

@@ -99,7 +99,7 @@ export function GraphToolbar({
   const totalConversations = agentConversations.length
 
   const PHASE_STYLES: Record<string, { color: string; bg: string; icon: typeof Shield }> = {
-    informational: { color: 'var(--accent-primary)', bg: 'rgba(59, 130, 246, 0.1)', icon: Shield },
+    informational: { color: '#059669', bg: 'rgba(5, 150, 105, 0.1)', icon: Shield },
     exploitation: { color: 'var(--status-warning)', bg: 'rgba(245, 158, 11, 0.1)', icon: Target },
     post_exploitation: { color: 'var(--status-error)', bg: 'rgba(239, 68, 68, 0.1)', icon: Zap },
   }

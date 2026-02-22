@@ -341,6 +341,7 @@ When a new objective is detected, the system uses an LLM-based classifier to det
 |------|-------------|-------------------|
 | `cve_exploit` | CVE-based exploitation using known vulnerabilities | "Exploit CVE-2021-41773 on 192.168.1.100" |
 | `brute_force_credential_guess` | Hydra brute force / credential attacks against services | "Try SSH brute force on 192.168.1.100" |
+| `<term>-unclassified` | Fallback for techniques without a specialized workflow | "Try SQL injection on the web app" → `sql_injection-unclassified` |
 
 ### Classification Flow
 
@@ -352,6 +353,7 @@ flowchart TB
 
     RESULT --> CVE[cve_exploit]
     RESULT --> BRUTE[brute_force_credential_guess]
+    RESULT --> UNCLASS["&lt;term&gt;-unclassified"]
 
     CVE --> CVE_TOOLS[CVE Exploit Tools<br/>search → use → info → set → exploit]
     CVE --> CVE_PAYLOAD{Payload Mode}
@@ -361,8 +363,11 @@ flowchart TB
     BRUTE --> BRUTE_TOOLS[Brute Force Tools<br/>use auxiliary/scanner → set → run]
     BRUTE --> BRUTE_POST[Post-Expl: Shell session<br/>via CreateSession=true]
 
+    UNCLASS --> UNCLASS_TOOLS[Generic Tools<br/>Use available tools based on technique]
+
     style CVE fill:#FFD700
     style BRUTE fill:#FF6B6B
+    style UNCLASS fill:#9CA3AF
     style CLASSIFY fill:#87CEEB
 ```
 
@@ -371,7 +376,7 @@ flowchart TB
 ```python
 class AttackPathClassification(BaseModel):
     required_phase: Phase           # "informational" or "exploitation"
-    attack_path_type: AttackPathType  # "cve_exploit" or "brute_force_credential_guess"
+    attack_path_type: str           # "cve_exploit", "brute_force_credential_guess", or "<term>-unclassified"
     secondary_attack_path: Optional[str]  # Fallback path if primary fails (e.g., brute_force after CVE fails)
     confidence: float               # 0.0-1.0 confidence score
     reasoning: str                  # Explanation for the classification

@@ -666,45 +666,6 @@ HTTP response headers (all captured headers).
 
 ---
 
-### 19. Exploit
-
-**Label:** `Exploit`
-**Created by:** AI agent orchestrator (automatic, when exploitation succeeds)
-**Detection:** LLM-based analysis of tool output (`exploit_succeeded` field in `OutputAnalysis`)
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | String | Deterministic ID for MERGE idempotency |
-| `user_id` | String | Tenant user ID |
-| `project_id` | String | Tenant project ID |
-| `attack_type` | String | `"cve_exploit"` or `"brute_force"` |
-| `severity` | String | Always `"critical"` |
-| `target_ip` | String | IP address of exploited target |
-| `target_port` | Integer | Port number targeted (optional) |
-| `cve_ids` | String[] | CVE IDs exploited (for cve_exploit) |
-| `metasploit_module` | String | Metasploit module used (optional) |
-| `payload` | String | Payload used (optional) |
-| `session_id` | Integer | Metasploit session ID (optional) |
-| `username` | String | Compromised username (for brute_force) |
-| `password` | String | Compromised password (for brute_force) |
-| `report` | String | Structured exploitation report |
-| `evidence` | String | LLM-provided evidence of success |
-| `commands_used` | String[] | Metasploit commands used |
-| `created_at` | DateTime | Node creation timestamp |
-
-**Relationships:**
-```cypher
-// CVE exploitation path
-(Exploit)-[:EXPLOITED_CVE]->(CVE)
-(Exploit)-[:TARGETED_IP]->(IP)
-
-// Brute force path
-(Exploit)-[:TARGETED_IP]->(IP)
-(Exploit)-[:VIA_PORT]->(Port)
-```
-
-**Visual:** Diamond shape (2D) / Octahedron (3D), amber color (#f59e0b), always-on glow, lightning bolt icon.
-
 ---
 
 ### 20. Traceroute
@@ -779,7 +740,7 @@ FOR (e:ExploitGvm) ON (e.user_id, e.project_id);
 (ExploitGvm)-[:EXPLOITED_CVE]->(CVE)   // Only connection — links to the exploited CVE
 ```
 
-**Visual:** Diamond shape (same as Exploit), orange-600 color (#ea580c), always-on glow, lightning bolt icon.
+**Visual:** Diamond shape, orange-600 color (#ea580c), always-on glow, lightning bolt icon.
 
 ---
 
@@ -908,8 +869,8 @@ RETURN s.name, ip.address, v.name, v.severity
 // Vulnerability found at endpoint (the path where the vulnerability was discovered)
 (Vulnerability)-[:FOUND_AT]->(Endpoint)
 
-// Vulnerability associated with CVE (if matched)
-(Vulnerability)-[:ASSOCIATED_CVE]->(CVE)
+// NOTE: Vulnerability nodes store CVE IDs as properties (cves list for nuclei,
+// cve_ids list for GVM), NOT as relationships to CVE nodes.
 
 // Security check vulnerabilities connect to the most specific EXISTING entity:
 // Priority: IP (for IP-based URLs) > BaseURL > Subdomain/Domain
@@ -944,16 +905,12 @@ RETURN s.name, ip.address, v.name, v.severity
 ### CVE/MITRE Relationships
 
 ```cypher
-// CVE has MITRE CWE data (root of CWE hierarchy)
-(CVE)-[:HAS_MITRE_DATA]->(MitreData)
+// CVE has CWE weakness data
+(CVE)-[:HAS_CWE]->(MitreData)
 
-// MitreData (CWE) has child CWE in hierarchy
-// Example: CWE-707 (Improper Neutralization) -> CWE-89 (SQL Injection)
-(MitreData)-[:HAS_CHILD_CWE]->(MitreData)
-
-// MitreData (CWE) links to related CAPEC attack patterns
+// MitreData (CWE) links to CAPEC attack patterns
 // Only created when CWE has non-empty related_capec
-(MitreData)-[:RELATED_CAPEC]->(Capec)
+(MitreData)-[:HAS_CAPEC]->(Capec)
 ```
 
 ---
@@ -1015,10 +972,10 @@ RETURN s.name, ip.address, v.name, v.severity
                                      │Parameter│ │  ┌──────▼──────┐
                                      └─────┬──┼─┘ │  │     CVE     │
                                            │  │   │  └──────▲──────┘
-                                 AFFECTS_PARAMETER│         │
-                                           │  │   │   ASSOCIATED_CVE
-                                    ┌──────▼──▼───┤         │
-                                    │ Vulnerability│◄───────┘
+                                 AFFECTS_PARAMETER│
+                                           │  │   │
+                                    ┌──────▼──▼───┤
+                                    │ Vulnerability│ (CVE IDs stored as properties)
                                     │  (DAST)      │
                                     └──────────────┘
 
@@ -1422,9 +1379,8 @@ FOR (p:Parameter) ON (p.is_injectable);
 | `vuln_scan.by_target.<host>.findings[]` | FOUND_AT | Vulnerability → Endpoint |
 | `vuln_scan.by_target.<host>.findings[].raw.fuzzing_parameter` | AFFECTS_PARAMETER | Vulnerability → Parameter |
 | `technology_cves.by_technology.<tech>.cves[]` | HAS_KNOWN_CVE | Technology → CVE |
-| `technology_cves.by_technology.<tech>.cves[].mitre_attack.cwe_hierarchy` | HAS_MITRE_DATA | CVE → MitreData |
-| `technology_cves.by_technology.<tech>.cves[].mitre_attack.cwe_hierarchy.child` | HAS_CHILD_CWE | MitreData → MitreData |
-| `technology_cves.by_technology.<tech>.cves[].mitre_attack.cwe_hierarchy.*.related_capec[]` | RELATED_CAPEC | MitreData → Capec |
+| `technology_cves.by_technology.<tech>.cves[].mitre_attack.cwe_hierarchy` | HAS_CWE | CVE → MitreData |
+| `technology_cves.by_technology.<tech>.cves[].mitre_attack.cwe_hierarchy.*.related_capec[]` | HAS_CAPEC | MitreData → Capec |
 
 ---
 
@@ -1618,9 +1574,301 @@ RETURN gr.name AS repo, secrets, sensitive_files ORDER BY secrets + sensitive_fi
 
 ---
 
+## ⚔️ Attack Chain Graph (EvoGraph)
+
+The Attack Chain Graph is an evolutionary, persistent graph that runs **parallel** to the recon graph. Every agent conversation maps 1:1 to an `AttackChain` node (`chain_id` = session ID). Steps, findings, decisions, and failures are first-class nodes with typed intra-chain relationships and bridge relationships to the recon graph.
+
+This replaces the standalone agent-created `Exploit` node with the richer `ChainFinding(finding_type="exploit_success")`.
+
+### Design Principles
+
+1. **1:1 Session Mapping**: Each agent conversation = one `AttackChain` node
+2. **Causal Linking**: `ChainStep` nodes connected via `NEXT_STEP` for temporal ordering
+3. **Typed Intelligence**: Findings, failures, and decisions are first-class nodes (not just strings)
+4. **Bridge Relationships**: Chain nodes link to recon graph entities (IP, CVE, Service) via typed edges
+5. **Cross-Session Memory**: Agent queries prior chains to avoid repeating failed approaches
+6. **Async-Safe Writes**: Step writes are synchronous (blocking) to prevent race conditions; finding/failure/decision writes are fire-and-forget (async) — errors logged but never crash the agent
+7. **MERGE Idempotency**: All writes use MERGE for checkpoint recovery safety
+
+---
+
+### AttackChain (Attack Session Root)
+
+Root node for an agent attack session. Created when the agent starts a new conversation.
+
+```cypher
+(:AttackChain {
+    chain_id: "session-abc123",              // Unique, equals agent session ID
+    user_id: "samgiam",
+    project_id: "first_test",
+    title: "Exploit CVE-2021-41773 on target",  // First message excerpt
+    objective: "Test Apache path traversal",
+    status: "completed",                     // active | completed | aborted
+    attack_path_type: "cve_exploit",         // cve_exploit | brute_force_credential_guess | <term>-unclassified
+    total_steps: 8,
+    successful_steps: 6,
+    failed_steps: 2,
+    phases_reached: ["informational", "exploitation"],
+    final_outcome: "Exploitation successful via CVE-2021-41773",
+    created_at: datetime(),
+    updated_at: datetime()
+})
+```
+
+**Relationships:**
+- `AttackChain -[:HAS_STEP {order: N}]-> ChainStep` — Chain contains step (order = iteration)
+- `AttackChain -[:CHAIN_TARGETS]-> Domain` — Always (project root)
+- `AttackChain -[:CHAIN_TARGETS]-> IP` — When objective mentions an IP
+- `AttackChain -[:CHAIN_TARGETS]-> Subdomain` — When objective mentions a hostname
+- `AttackChain -[:CHAIN_TARGETS]-> Port` — When objective mentions a port
+- `AttackChain -[:CHAIN_TARGETS]-> CVE` — When objective mentions CVE IDs
+
+### ChainStep (Tool Execution Step)
+
+Each tool execution in an attack chain. Contains the agent's thought process, tool output, and analysis.
+
+```cypher
+(:ChainStep {
+    step_id: "step-uuid-123",               // Unique UUID
+    chain_id: "session-abc123",
+    user_id: "samgiam",
+    project_id: "first_test",
+    iteration: 3,
+    phase: "exploitation",                   // informational | exploitation | post_exploitation
+    tool_name: "metasploit_console",
+    tool_args_summary: "{command: 'search CVE-2021-41773'}",
+    thought: "Need to find a Metasploit module for this CVE...",
+    reasoning: "CVE-2021-41773 is a path traversal in Apache 2.4.49",
+    output_summary: "1 result: exploit/multi/http/apache_normalize_path_rce",
+    output_analysis: "Found matching module. Rank: excellent.",
+    success: true,
+    error_message: null,
+    duration_ms: 1200,
+    created_at: datetime()
+})
+```
+
+**Relationships:**
+- `ChainStep -[:NEXT_STEP]-> ChainStep` — Sequential step ordering
+- `ChainStep -[:PRODUCED]-> ChainFinding` — Step produced a finding
+- `ChainStep -[:FAILED_WITH]-> ChainFailure` — Step failed with error
+- `ChainStep -[:LED_TO]-> ChainDecision` — Step led to a strategic decision
+- `ChainStep -[:STEP_TARGETED]-> IP` — Step targeted an IP (bridge to recon)
+- `ChainStep -[:STEP_TARGETED]-> Subdomain` — Step targeted a hostname (bridge to recon)
+- `ChainStep -[:STEP_TARGETED]-> Port` — Step targeted a port (bridge to recon)
+- `ChainStep -[:STEP_EXPLOITED]-> CVE` — Step exploited a CVE (bridge to recon)
+- `ChainStep -[:STEP_IDENTIFIED]-> Technology` — Step identified a technology (bridge to recon)
+
+### ChainFinding (Discovery / Exploit Result)
+
+A discovery made during an attack chain. Replaces the standalone `Exploit` node when `finding_type="exploit_success"`.
+
+```cypher
+(:ChainFinding {
+    finding_id: "finding-uuid-456",          // Unique UUID
+    chain_id: "session-abc123",
+    user_id: "samgiam",
+    project_id: "first_test",
+    finding_type: "exploit_success",         // See finding_type enum below
+    severity: "critical",                    // critical | high | medium | low | info
+    title: "Meterpreter session opened via CVE-2021-41773",
+    description: "Apache path traversal exploited for RCE",
+    evidence: "Meterpreter session 1 opened (10.0.0.1:4444 -> 10.0.0.5:443)",
+    confidence: 95,                          // 0-100
+    phase: "exploitation",
+    // Exploit-specific properties (only for finding_type="exploit_success"):
+    attack_type: "cve_exploit",
+    target_ip: "10.0.0.5",
+    target_port: 443,
+    cve_ids: ["CVE-2021-41773"],
+    metasploit_module: "exploit/multi/http/apache_normalize_path_rce",
+    payload: "linux/x64/meterpreter/reverse_tcp",
+    session_id: 1,
+    report: "Structured exploitation report...",
+    commands_used: ["search CVE-2021-41773", "use 0", "set RHOSTS ...", "exploit"],
+    created_at: datetime()
+})
+```
+
+**Finding types:** `vulnerability_confirmed`, `credential_found`, `exploit_success`, `access_gained`, `privilege_escalation`, `service_identified`, `exploit_module_found`, `defense_detected`, `configuration_found`, `custom`
+
+**Relationships:**
+- `ChainFinding -[:FOUND_ON]-> IP` — Finding discovered on IP (bridge to recon)
+- `ChainFinding -[:FOUND_ON]-> Subdomain` — Finding discovered on subdomain (bridge to recon)
+- `ChainFinding -[:FINDING_RELATES_CVE]-> CVE` — Finding relates to CVE (bridge to recon)
+- `ChainFinding -[:CREDENTIAL_FOR]-> Service` — Credential found for service (bridge to recon)
+
+### ChainDecision (Strategic Pivot)
+
+A strategic decision point in an attack chain — phase transitions, strategy changes, target switches.
+
+```cypher
+(:ChainDecision {
+    decision_id: "decision-uuid-789",        // Unique UUID
+    chain_id: "session-abc123",
+    user_id: "samgiam",
+    project_id: "first_test",
+    decision_type: "phase_transition",       // phase_transition | strategy_change | target_switch
+    from_state: "informational",
+    to_state: "exploitation",
+    reason: "Found exploitable CVE-2021-41773 on Apache 2.4.49",
+    made_by: "user",                         // agent | user
+    approved: true,
+    created_at: datetime()
+})
+```
+
+**Relationships:**
+- `ChainStep -[:LED_TO]-> ChainDecision` — Step triggered this decision
+- `ChainDecision -[:DECISION_PRECEDED]-> ChainStep` — Decision preceded this next step (connects decision into the sequential flow)
+
+### ChainFailure (Failed Attempt with Lesson)
+
+A failed attempt with a lesson learned, enabling the agent to avoid repeating mistakes across sessions.
+
+```cypher
+(:ChainFailure {
+    failure_id: "failure-uuid-012",          // Unique UUID
+    chain_id: "session-abc123",
+    user_id: "samgiam",
+    project_id: "first_test",
+    failure_type: "exploit_failed",          // exploit_failed | authentication_failed | tool_error | timeout | connection_refused
+    tool_name: "metasploit_console",
+    error_category: "connection",
+    error_message: "Connection refused on port 80",
+    lesson_learned: "Target filters HTTP traffic, try HTTPS (443) instead",
+    retry_possible: true,
+    phase: "exploitation",
+    created_at: datetime()
+})
+```
+
+**Relationship:** `ChainStep -[:FAILED_WITH]-> ChainFailure`
+
+### Full Chain
+
+```
+AttackChain -[:HAS_STEP {order: N}]-> ChainStep
+    -[:NEXT_STEP]-> ChainStep (sequential linking)
+    -[:PRODUCED]-> ChainFinding
+    -[:FAILED_WITH]-> ChainFailure
+    -[:LED_TO]-> ChainDecision
+        -[:DECISION_PRECEDED]-> ChainStep (connects decision into the flow)
+
+Bridge to Recon Graph (static, no animation):
+Note: Bridges are only created for tool-execution steps. query_graph steps (read-only) create NO bridges.
+    AttackChain -[:CHAIN_TARGETS]-> Domain / IP / Subdomain / Port / CVE  (extracted from objective text by LLM)
+    ChainStep -[:STEP_TARGETED]-> IP / Subdomain / Port  (IP vs Subdomain depends on whether primary_target is an IP or hostname)
+    ChainStep -[:STEP_EXPLOITED]-> CVE
+    ChainStep -[:STEP_IDENTIFIED]-> Technology  (case-insensitive match on Technology.name)
+    ChainFinding -[:FOUND_ON]-> IP / Subdomain  (IP vs Subdomain depends on whether related_ips value is an IP or hostname)
+    ChainFinding -[:FINDING_RELATES_CVE]-> CVE
+    ChainFinding -[:CREDENTIAL_FOR]-> Service
+```
+
+### Constraints & Indexes
+
+```cypher
+CREATE CONSTRAINT attack_chain_id IF NOT EXISTS
+FOR (ac:AttackChain) REQUIRE ac.chain_id IS UNIQUE;
+
+CREATE CONSTRAINT chain_step_id IF NOT EXISTS
+FOR (s:ChainStep) REQUIRE s.step_id IS UNIQUE;
+
+CREATE CONSTRAINT chain_finding_id IF NOT EXISTS
+FOR (f:ChainFinding) REQUIRE f.finding_id IS UNIQUE;
+
+CREATE CONSTRAINT chain_decision_id IF NOT EXISTS
+FOR (d:ChainDecision) REQUIRE d.decision_id IS UNIQUE;
+
+CREATE CONSTRAINT chain_failure_id IF NOT EXISTS
+FOR (fl:ChainFailure) REQUIRE fl.failure_id IS UNIQUE;
+
+CREATE INDEX idx_attackchain_tenant IF NOT EXISTS
+FOR (ac:AttackChain) ON (ac.user_id, ac.project_id);
+
+CREATE INDEX idx_chainstep_tenant IF NOT EXISTS
+FOR (s:ChainStep) ON (s.user_id, s.project_id);
+
+CREATE INDEX idx_chainfinding_tenant IF NOT EXISTS
+FOR (f:ChainFinding) ON (f.user_id, f.project_id);
+
+CREATE INDEX idx_chaindecision_tenant IF NOT EXISTS
+FOR (d:ChainDecision) ON (d.user_id, d.project_id);
+
+CREATE INDEX idx_chainfailure_tenant IF NOT EXISTS
+FOR (fl:ChainFailure) ON (fl.user_id, fl.project_id);
+
+CREATE INDEX idx_chainstep_chain IF NOT EXISTS
+FOR (s:ChainStep) ON (s.chain_id);
+
+CREATE INDEX idx_chainfinding_type IF NOT EXISTS
+FOR (f:ChainFinding) ON (f.finding_type);
+
+CREATE INDEX idx_chainfinding_severity IF NOT EXISTS
+FOR (f:ChainFinding) ON (f.severity);
+
+CREATE INDEX idx_chainfailure_type IF NOT EXISTS
+FOR (fl:ChainFailure) ON (fl.failure_type);
+
+CREATE INDEX idx_attackchain_status IF NOT EXISTS
+FOR (ac:AttackChain) ON (ac.status);
+```
+
+### Example Queries
+
+```cypher
+// All attack chains for a project
+MATCH (ac:AttackChain {user_id: $userId, project_id: $projectId})
+RETURN ac.chain_id, ac.title, ac.status, ac.attack_path_type, ac.total_steps, ac.created_at
+ORDER BY ac.created_at DESC
+LIMIT 10
+
+// Steps in a specific chain (ordered)
+MATCH (ac:AttackChain {chain_id: "session-123", user_id: $userId, project_id: $projectId})
+      -[:HAS_STEP]->(s:ChainStep)
+RETURN s.iteration, s.phase, s.tool_name, s.success, s.output_summary
+ORDER BY s.iteration
+
+// All high-severity findings across chains
+MATCH (f:ChainFinding {user_id: $userId, project_id: $projectId})
+WHERE f.severity IN ["critical", "high"]
+RETURN f.finding_type, f.title, f.severity, f.evidence, f.chain_id
+ORDER BY f.created_at DESC
+LIMIT 20
+
+// Exploit successes (replaces Exploit node queries)
+MATCH (f:ChainFinding {user_id: $userId, project_id: $projectId, finding_type: "exploit_success"})
+RETURN f.target_ip, f.target_port, f.cve_ids, f.metasploit_module, f.evidence
+LIMIT 20
+
+// Failed attempts with lessons learned
+MATCH (fl:ChainFailure {user_id: $userId, project_id: $projectId})
+RETURN fl.failure_type, fl.tool_name, fl.error_message, fl.lesson_learned, fl.chain_id
+ORDER BY fl.created_at DESC
+LIMIT 20
+
+// Cross-session: what was tried against a specific IP
+MATCH (s:ChainStep {user_id: $userId, project_id: $projectId})-[:STEP_TARGETED]->(i:IP {address: "10.0.0.5"})
+RETURN s.chain_id, s.tool_name, s.success, s.output_summary
+ORDER BY s.created_at DESC
+
+// Chain with all findings and failures
+MATCH (ac:AttackChain {chain_id: "session-123", user_id: $userId, project_id: $projectId})
+OPTIONAL MATCH (ac)-[:HAS_STEP]->(s:ChainStep)-[:PRODUCED]->(f:ChainFinding)
+OPTIONAL MATCH (s)-[:FAILED_WITH]->(fl:ChainFailure)
+RETURN s.iteration, s.tool_name, f.title, fl.error_message
+ORDER BY s.iteration
+
+// Decisions made during a chain
+MATCH (ac:AttackChain {chain_id: "session-123", user_id: $userId, project_id: $projectId})
+      -[:HAS_STEP]->(s:ChainStep)-[:LED_TO]->(d:ChainDecision)
+RETURN d.decision_type, d.from_state, d.to_state, d.reason, d.made_by, d.approved
+ORDER BY s.iteration
+```
+
+---
+
 ## 🔮 Future Extensions (Not Implemented Yet)
 - GVMScan, GVMVulnerability, DetectedProduct, OSFingerprint nodes (GVM integration - designed but not yet created by code; GVM vulns currently stored as Vulnerability nodes with source="gvm"; Traceroute nodes now implemented)
-- `AttackChain` nodes linking vulnerabilities into exploitable paths
-- `Credential` nodes for discovered credentials
 - `Screenshot` nodes linking to stored images
-- `ScanSession` nodes for tracking multiple scan runs

@@ -121,7 +121,7 @@ export interface ToolCompletePayload {
 export interface PhaseUpdatePayload {
   current_phase: string
   iteration_count: number
-  attack_path_type?: 'cve_exploit' | 'brute_force_credential_guess'
+  attack_path_type?: string  // "cve_exploit", "brute_force_credential_guess", or "<term>-unclassified"
 }
 
 export interface TodoItem {

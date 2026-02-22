@@ -43,6 +43,9 @@ from .brute_force_credential_guess_prompts import (
     HYDRA_WORDLIST_GUIDANCE,
 )
 
+# Re-export from unclassified attack path prompts
+from .unclassified_prompts import UNCLASSIFIED_EXPLOIT_TOOLS
+
 # Re-export from post-exploitation prompts
 from .post_exploitation import (
     POST_EXPLOITATION_TOOLS_STATEFULL,
@@ -160,6 +163,9 @@ def get_phase_tools(
             ))
             # Add wordlist reference guide
             parts.append(HYDRA_WORDLIST_GUIDANCE)
+        elif attack_path_type.endswith("-unclassified"):
+            # Generic unclassified workflow — no specific tool workflow
+            parts.append(UNCLASSIFIED_EXPLOIT_TOOLS)
         elif "metasploit_console" in allowed_tools:
             # CVE-based exploitation (default)
             parts.append(CVE_EXPLOIT_TOOLS)
@@ -231,6 +237,8 @@ __all__ = [
     # Hydra brute force
     "HYDRA_BRUTE_FORCE_TOOLS",
     "HYDRA_WORDLIST_GUIDANCE",
+    # Unclassified attack path
+    "UNCLASSIFIED_EXPLOIT_TOOLS",
     # Post-exploitation
     "POST_EXPLOITATION_TOOLS_STATEFULL",
     "POST_EXPLOITATION_TOOLS_STATELESS",

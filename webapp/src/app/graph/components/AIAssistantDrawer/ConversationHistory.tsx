@@ -6,7 +6,7 @@ import type { Conversation } from '@/hooks/useConversations'
 import styles from './ConversationHistory.module.css'
 
 const PHASE_COLORS: Record<string, { color: string; bg: string }> = {
-  informational: { color: 'var(--accent-primary)', bg: 'rgba(59, 130, 246, 0.1)' },
+  informational: { color: '#059669', bg: 'rgba(5, 150, 105, 0.1)' },
   exploitation: { color: 'var(--status-warning)', bg: 'rgba(245, 158, 11, 0.1)' },
   post_exploitation: { color: 'var(--status-error)', bg: 'rgba(239, 68, 68, 0.1)' },
 }
@@ -75,10 +75,10 @@ export function ConversationHistory({
         <button className={styles.backButton} onClick={onBack} title="Back to chat">
           <ArrowLeft size={14} />
         </button>
-        <span className={styles.headerTitle}>Conversations</span>
+        <span className={styles.headerTitle}>Sessions</span>
         <button className={styles.newChatButton} onClick={onNewChat}>
           <Plus size={12} />
-          New Chat
+          New Session
         </button>
       </div>
 
@@ -86,7 +86,7 @@ export function ConversationHistory({
         {conversations.length === 0 ? (
           <div className={styles.empty}>
             <MessageSquare size={24} style={{ marginBottom: 8, opacity: 0.5 }} />
-            <span>No conversations yet</span>
+            <span>No sessions yet</span>
           </div>
         ) : (
           conversations.map((conv) => {
@@ -103,9 +103,12 @@ export function ConversationHistory({
                 >
                   <div className={styles.itemContent}>
                     <div className={styles.itemTitle}>
-                      {conv.title || 'New conversation'}
+                      {conv.title || 'New session'}
                     </div>
                     <div className={styles.itemMeta}>
+                      <span className={styles.itemTime} title={conv.sessionId}>
+                        {conv.sessionId.slice(-8)}
+                      </span>
                       <span className={styles.itemTime}>
                         {formatRelativeTime(conv.updatedAt)}
                       </span>
@@ -130,7 +133,7 @@ export function ConversationHistory({
                   <button
                     className={styles.deleteButton}
                     onClick={(e) => handleDeleteClick(e, conv.id)}
-                    title="Delete conversation"
+                    title="Delete session"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -138,7 +141,7 @@ export function ConversationHistory({
 
                 {deleteConfirmId === conv.id && (
                   <div className={styles.confirmDelete}>
-                    <span>Delete this conversation?</span>
+                    <span>Delete this session?</span>
                     <button
                       className={styles.confirmYes}
                       onClick={(e) => handleConfirmDelete(e, conv.id)}

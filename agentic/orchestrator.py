@@ -34,12 +34,15 @@ from state import (
     ObjectiveOutcome,
     format_todo_list,
     format_execution_trace,
+    format_chain_context,
+    format_prior_chains,
     format_qa_history,
     format_objective_history,
     migrate_legacy_objective,
     summarize_trace_for_response,
     utc_now,
 )
+import orchestrator_helpers.chain_graph_writer as chain_graph
 from project_settings import get_setting, load_project_settings, get_allowed_tools_for_phase
 from tools import (
     MCPToolsManager,
@@ -482,9 +485,9 @@ class AgentOrchestrator:
                 else:
                     objective_history = state.get("objective_history", [])
 
-                # Classify attack path and required phase using LLM
-                attack_path, required_phase = await classify_attack_path(self.llm, latest_message)
-                logger.info(f"[{user_id}/{project_id}/{session_id}] Attack path classified: {attack_path}, required_phase: {required_phase}")
+                # Classify attack path, required phase, and target hints using LLM
+                attack_path, required_phase, target_host, target_port, target_cves = await classify_attack_path(self.llm, latest_message)
+                logger.info(f"[{user_id}/{project_id}/{session_id}] Attack path classified: {attack_path}, required_phase: {required_phase}, target: {target_host}:{target_port}, cves: {target_cves}")
 
                 # Create new objective from latest message
                 new_objective = ConversationObjective(
@@ -504,6 +507,20 @@ class AgentOrchestrator:
                 new_phase = determine_phase_for_new_objective(
                     required_phase,
                     state.get("current_phase"),
+                )
+
+                # Fire-and-forget: create/update AttackChain node (MERGE = idempotent)
+                chain_graph.fire_create_attack_chain(
+                    self.neo4j_uri, self.neo4j_user, self.neo4j_password,
+                    chain_id=session_id,
+                    user_id=user_id,
+                    project_id=project_id,
+                    title=latest_message[:200] if latest_message else "Untitled",
+                    objective=latest_message[:500],
+                    attack_path_type=attack_path,
+                    target_host=target_host,
+                    target_port=target_port,
+                    target_cves=target_cves,
                 )
 
                 # CRITICAL: Preserve ALL context (user preference)
@@ -527,11 +544,32 @@ class AgentOrchestrator:
                     "phase_transition_pending": None,
                     "_abort_transition": False,
                     "original_objective": state.get("original_objective", latest_message),  # Backward compat
+                    # Chain memory (preserve across objectives)
+                    "chain_findings_memory": state.get("chain_findings_memory", []),
+                    "chain_failures_memory": state.get("chain_failures_memory", []),
+                    "chain_decisions_memory": state.get("chain_decisions_memory", []),
+                    "_last_chain_step_id": state.get("_last_chain_step_id"),
+                    "_prior_chain_context": state.get("_prior_chain_context"),
                 }
 
         # Otherwise, continue with current objective
         logger.info(f"[{user_id}/{project_id}/{session_id}] Continuing with current objective")
-        return {
+
+        # Fire-and-forget: create/update AttackChain node (MERGE = idempotent)
+        current_objective_content = ""
+        if current_idx < len(objectives):
+            current_objective_content = objectives[current_idx].get("content", "")
+        chain_graph.fire_create_attack_chain(
+            self.neo4j_uri, self.neo4j_user, self.neo4j_password,
+            chain_id=session_id,
+            user_id=user_id,
+            project_id=project_id,
+            title=latest_message[:200] if latest_message else "Untitled",
+            objective=current_objective_content[:500],
+            attack_path_type=state.get("attack_path_type", "cve_exploit"),
+        )
+
+        updates = {
             "current_iteration": state.get("current_iteration", 0),
             "max_iterations": state.get("max_iterations", get_setting('MAX_ITERATIONS', 100)),
             "task_complete": False,
@@ -553,7 +591,27 @@ class AgentOrchestrator:
             "awaiting_user_approval": False,
             "phase_transition_pending": None,
             "_abort_transition": False,
+            # Chain memory (preserve)
+            "chain_findings_memory": state.get("chain_findings_memory", []),
+            "chain_failures_memory": state.get("chain_failures_memory", []),
+            "chain_decisions_memory": state.get("chain_decisions_memory", []),
+            "_last_chain_step_id": state.get("_last_chain_step_id"),
+            "_prior_chain_context": state.get("_prior_chain_context"),
         }
+
+        # Load prior chain context on first invocation (empty trace)
+        if not state.get("execution_trace"):
+            try:
+                prior_chains = chain_graph.query_prior_chains(
+                    self.neo4j_uri, self.neo4j_user, self.neo4j_password,
+                    user_id, project_id, session_id,
+                )
+                if prior_chains:
+                    updates["_prior_chain_context"] = format_prior_chains(prior_chains)
+            except Exception as exc:
+                logger.warning("Failed to load prior chain context: %s", exc)
+
+        return updates
 
     async def _think_node(self, state: AgentState, config = None) -> dict:
         """
@@ -588,11 +646,11 @@ class AgentOrchestrator:
             current_objective = state.get("original_objective", "No objective specified")
 
         # Build the prompt with current state
-        execution_trace_formatted = format_execution_trace(
-            state.get("execution_trace", []),
-            objectives=state.get("conversation_objectives", []),
-            objective_history=state.get("objective_history", []),
-            current_objective_index=state.get("current_objective_index", 0)
+        chain_context_formatted = format_chain_context(
+            chain_findings=state.get("chain_findings_memory", []),
+            chain_failures=state.get("chain_failures_memory", []),
+            chain_decisions=state.get("chain_decisions_memory", []),
+            execution_trace=state.get("execution_trace", []),
         )
         todo_list_formatted = format_todo_list(state.get("todo_list", []))
         target_info_formatted = json_dumps_safe(state.get("target_info", {}), indent=2)
@@ -624,7 +682,8 @@ class AgentOrchestrator:
             max_iterations=state.get("max_iterations", get_setting('MAX_ITERATIONS', 100)),
             objective=current_objective,  # Now uses current objective, not original
             objective_history_summary=objective_history_formatted,  # Added
-            execution_trace=execution_trace_formatted,
+            prior_chain_history=state.get("_prior_chain_context") or "No prior sessions.",
+            chain_context=chain_context_formatted,
             todo_list=todo_list_formatted,
             target_info=target_info_formatted,
             qa_history=qa_history_formatted,
@@ -713,7 +772,7 @@ class AgentOrchestrator:
         logger.info(f"\n{'#'*80}")
         logger.info(f"# THINK NODE PROMPT - Iteration {iteration} - Phase: {phase}")
         logger.info(f"{'#'*80}")
-        logger.info(f"\n--- EXECUTION TRACE ---\n{execution_trace_formatted}")
+        logger.info(f"\n--- CHAIN CONTEXT ---\n{chain_context_formatted}")
         logger.info(f"\n--- TODO LIST ---\n{todo_list_formatted}")
         logger.info(f"\n--- TARGET INFO ---\n{target_info_formatted}")
         logger.info(f"\n--- Q&A HISTORY ---\n{qa_history_formatted}")
@@ -849,6 +908,9 @@ class AgentOrchestrator:
 
         # Process output analysis if we had pending tool output
         if has_pending_output:
+            # Use the step's own iteration (not the current think call's)
+            step_iteration = pending_step.get("iteration", iteration)
+
             if decision.output_analysis:
                 analysis = decision.output_analysis
 
@@ -885,27 +947,128 @@ class AgentOrchestrator:
                 )
                 merged_target = current_target.merge_from(new_target)
 
-                # Exploit success detection (moved from old _analyze_output_node)
+                # --- Chain Memory Population ---
+                step_id = pending_step.get("step_id")
+
+                # 1. Populate chain_findings_memory
+                chain_findings_mem = list(state.get("chain_findings_memory", []))
+                if analysis.chain_findings:
+                    for cf in analysis.chain_findings:
+                        finding_dict = cf.model_dump() if hasattr(cf, 'model_dump') else (cf if isinstance(cf, dict) else {})
+                        finding_dict["step_iteration"] = step_iteration
+                        chain_findings_mem.append(finding_dict)
+                elif analysis.actionable_findings:
+                    for af_text in analysis.actionable_findings:
+                        chain_findings_mem.append({
+                            "finding_type": "custom",
+                            "severity": "info",
+                            "title": af_text[:200],
+                            "evidence": "",
+                            "step_iteration": step_iteration,
+                            "confidence": 60,
+                        })
+                # Exploit success also goes into findings memory
+                if analysis.exploit_succeeded and analysis.exploit_details:
+                    details = analysis.exploit_details
+                    chain_findings_mem.append({
+                        "finding_type": "exploit_success",
+                        "severity": "critical",
+                        "title": f"Exploit success: {details.get('evidence', '')[:100]}",
+                        "evidence": details.get("evidence", ""),
+                        "step_iteration": step_iteration,
+                        "confidence": 95,
+                        "related_cves": details.get("cve_ids", []),
+                        "related_ips": [details.get("target_ip", "")] if details.get("target_ip") else [],
+                    })
+                updates["chain_findings_memory"] = chain_findings_mem
+
+                # 2. Populate chain_failures_memory if step failed
+                if not pending_step.get("success"):
+                    chain_failures_mem = list(state.get("chain_failures_memory", []))
+                    chain_failures_mem.append({
+                        "step_iteration": step_iteration,
+                        "failure_type": "tool_error",
+                        "tool_name": pending_step.get("tool_name", ""),
+                        "error_message": pending_step.get("error_message", ""),
+                        "lesson_learned": analysis.interpretation[:300] if analysis else "",
+                    })
+                    updates["chain_failures_memory"] = chain_failures_mem
+
+                # 3. Fire-and-forget: write ChainStep to Neo4j
+                prev_step_id = state.get("_last_chain_step_id")
+                chain_graph.sync_record_step(
+                    self.neo4j_uri, self.neo4j_user, self.neo4j_password,
+                    step_id=step_id,
+                    chain_id=session_id,
+                    prev_step_id=prev_step_id,
+                    user_id=user_id, project_id=project_id,
+                    iteration=step_iteration, phase=phase,
+                    tool_name=pending_step.get("tool_name"),
+                    tool_args_summary=str(pending_step.get("tool_args", {}))[:500],
+                    thought=pending_step.get("thought", "")[:2000],
+                    reasoning=pending_step.get("reasoning", "")[:1000],
+                    output_summary=(pending_step.get("tool_output") or "")[:2000],
+                    output_analysis=analysis.interpretation[:2000] if analysis else "",
+                    success=pending_step.get("success", True),
+                    error_message=pending_step.get("error_message"),
+                    extracted_info=analysis.extracted_info.model_dump() if analysis and analysis.extracted_info else {},
+                )
+                updates["_last_chain_step_id"] = step_id
+
+                # 4. Fire-and-forget: write exploit success (AFTER step so PRODUCED link works)
                 if analysis.exploit_succeeded and analysis.exploit_details and phase == "exploitation":
                     details = analysis.exploit_details
                     try:
-                        from orchestrator_helpers.exploit_writer import create_exploit_node
-                        create_exploit_node(
+                        chain_graph.fire_record_exploit_success(
                             self.neo4j_uri, self.neo4j_user, self.neo4j_password,
-                            user_id, project_id,
+                            chain_id=session_id,
+                            step_id=step_id,
+                            user_id=user_id,
+                            project_id=project_id,
                             attack_type=details.get("attack_type", state.get("attack_path_type", "cve_exploit")),
                             target_ip=details.get("target_ip", merged_target.primary_target),
                             target_port=details.get("target_port"),
                             cve_ids=details.get("cve_ids", merged_target.vulnerabilities),
                             session_id=details.get("session_id"),
                             username=details.get("username"),
-                            password=details.get("password"),
+                            password_found=details.get("password"),
                             evidence=details.get("evidence", ""),
                             execution_trace=state.get("execution_trace", []),
+                            iteration=step_iteration,
                         )
-                        logger.info(f"[{user_id}/{project_id}/{session_id}] Exploit success detected - node created")
+                        logger.info(f"[{user_id}/{project_id}/{session_id}] Exploit success detected - ChainFinding created")
                     except Exception as e:
-                        logger.error(f"[{user_id}/{project_id}/{session_id}] Failed to create Exploit node: {e}")
+                        logger.error(f"[{user_id}/{project_id}/{session_id}] Failed to record exploit success: {e}")
+
+                # 5. Fire-and-forget: write other ChainFindings (skip exploit-related if already recorded)
+                _EXPLOIT_OVERLAP_TYPES = {"exploit_success", "access_gained", "credential_found"}
+                for cf in (analysis.chain_findings or []):
+                    if analysis.exploit_succeeded and cf.finding_type in _EXPLOIT_OVERLAP_TYPES:
+                        continue  # Already recorded via fire_record_exploit_success
+                    chain_graph.fire_record_finding(
+                        self.neo4j_uri, self.neo4j_user, self.neo4j_password,
+                        chain_id=session_id, step_id=step_id,
+                        user_id=user_id, project_id=project_id,
+                        finding_type=cf.finding_type, severity=cf.severity,
+                        title=cf.title, evidence=cf.evidence,
+                        confidence=cf.confidence, phase=phase,
+                        iteration=step_iteration,
+                        related_cves=cf.related_cves, related_ips=cf.related_ips,
+                    )
+
+                # 6. Fire-and-forget: write ChainFailure if failed
+                if not pending_step.get("success"):
+                    chain_graph.fire_record_failure(
+                        self.neo4j_uri, self.neo4j_user, self.neo4j_password,
+                        chain_id=session_id, step_id=step_id,
+                        user_id=user_id, project_id=project_id,
+                        failure_type="tool_error",
+                        tool_name=pending_step.get("tool_name", ""),
+                        error_message=pending_step.get("error_message", ""),
+                        lesson_learned=analysis.interpretation[:300] if analysis else "",
+                        phase=phase,
+                        iteration=step_iteration,
+                    )
 
                 # Append completed step to execution trace
                 execution_trace = state.get("execution_trace", []) + [pending_step]
@@ -1286,6 +1449,32 @@ class AgentOrchestrator:
             )
             updated_trace = state.get("execution_trace", []) + [transition_step.model_dump()]
 
+            # Fire-and-forget: record ChainDecision for phase transition
+            chain_graph.fire_record_decision(
+                self.neo4j_uri, self.neo4j_user, self.neo4j_password,
+                chain_id=session_id,
+                step_id=state.get("_last_chain_step_id"),
+                user_id=user_id, project_id=project_id,
+                decision_type="phase_transition",
+                from_state=from_phase,
+                to_state=new_phase,
+                reason=transition.get("reason", ""),
+                made_by="user",
+                approved=True,
+                iteration=state.get("current_iteration"),
+            )
+
+            # Update chain_decisions_memory
+            chain_decisions_mem = list(state.get("chain_decisions_memory", []))
+            chain_decisions_mem.append({
+                "step_iteration": state.get("current_iteration", 0),
+                "decision_type": "phase_transition",
+                "from_state": from_phase,
+                "to_state": new_phase,
+                "made_by": "user",
+                "approved": True,
+            })
+
             return {
                 **clear_approval_state,
                 "current_phase": new_phase,
@@ -1297,6 +1486,8 @@ class AgentOrchestrator:
                 "messages": [AIMessage(content=f"Phase transition approved. Now in **{new_phase}** phase.")],
                 # Mark that we just transitioned to prevent re-requesting
                 "_just_transitioned_to": new_phase,
+                # Chain memory
+                "chain_decisions_memory": chain_decisions_mem,
             }
 
         elif approval == "modify":
@@ -1310,6 +1501,20 @@ class AgentOrchestrator:
             }
 
         else:  # abort
+            # Record rejected decision
+            chain_graph.fire_record_decision(
+                self.neo4j_uri, self.neo4j_user, self.neo4j_password,
+                chain_id=session_id,
+                step_id=state.get("_last_chain_step_id"),
+                user_id=user_id, project_id=project_id,
+                decision_type="phase_transition",
+                from_state=transition.get("from_phase", state.get("current_phase", "informational")),
+                to_state=transition.get("to_phase", "exploitation"),
+                reason="User aborted transition",
+                made_by="user",
+                approved=False,
+                iteration=state.get("current_iteration"),
+            )
             return {
                 **clear_approval_state,
                 "_abort_transition": True,
@@ -1424,6 +1629,24 @@ class AgentOrchestrator:
         )
 
         response = await self.llm.ainvoke([HumanMessage(content=report_prompt)])
+
+        # Fire-and-forget: update AttackChain status to completed
+        trace = state.get("execution_trace", [])
+        total = len(trace)
+        successful = sum(1 for s in trace if s.get("success", True))
+        failed = total - successful
+        phases = list({s.get("phase") for s in trace if s.get("phase")})
+
+        chain_graph.fire_update_chain_status(
+            self.neo4j_uri, self.neo4j_user, self.neo4j_password,
+            chain_id=session_id,
+            status="completed",
+            final_outcome=state.get("completion_reason", ""),
+            total_steps=total,
+            successful_steps=successful,
+            failed_steps=failed,
+            phases_reached=phases,
+        )
 
         return {
             "messages": [AIMessage(content=normalize_content(response.content))],

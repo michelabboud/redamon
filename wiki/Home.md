@@ -1,5 +1,7 @@
 # RedAmon Wiki
 
+> **Legal Disclaimer**: This tool is intended for **authorized security testing**, **educational purposes**, and **research only**. Never use this system to scan, probe, or attack any system you do not own or have explicit written permission to test. Read the [full disclaimer](../DISCLAIMER.md).
+
 Welcome to the **RedAmon** user guide — a comprehensive, step-by-step reference for getting started with and mastering every feature of the RedAmon AI-powered red team framework.
 
 > **New here?** Start with [Getting Started](1.-Getting-Started) to install and launch RedAmon, then follow the guide sequentially.
@@ -39,5 +41,3 @@ RedAmon is an AI-powered agentic red team framework that automates offensive sec
 - **Attack Surface Graph** — Neo4j knowledge graph with 17 node types
 - **180+ Project Settings** — fine-grained control over every tool and behavior
 - **400+ AI Models** — support for 5 providers including local models via Ollama
-
-> **Legal Disclaimer**: This tool is intended for **authorized security testing**, **educational purposes**, and **research only**. Never use this system to scan, probe, or attack any system you do not own or have explicit written permission to test.
